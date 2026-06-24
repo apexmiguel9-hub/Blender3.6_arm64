@@ -3,6 +3,7 @@
 
 #include "GHOST_Window.h"
 #include "GHOST_Rect.h"
+#include "STR_String.h"
 #include <android/native_window.h>
 #include <EGL/egl.h>
 
@@ -17,8 +18,8 @@ public:
 	GHOST_TSuccess setNativeWindow(ANativeWindow *window, int w, int h);
 	GHOST_Rect getClientBounds() const { return m_clientBounds; }
 	bool getValid() const;
-	void setTitle(const GHOST_TUns8 *title);
-	std::string getTitle() const;
+	void setTitle(const STR_String &title);
+	void getTitle(STR_String &title) const;
 	void getWindowBounds(GHOST_Rect &bounds) const;
 	void getClientBounds(GHOST_Rect &bounds) const;
 	GHOST_TSuccess setClientWidth(GHOST_TUns32 width);
@@ -31,6 +32,24 @@ public:
 	GHOST_TSuccess swapBuffers();
 	GHOST_TSuccess setSwapInterval(int interval);
 	GHOST_TSuccess getSwapInterval(int &intervalOut);
+
+	GHOST_TWindowState getState() const;
+	GHOST_TSuccess setState(GHOST_TWindowState state);
+	GHOST_TSuccess setOrder(GHOST_TWindowOrder order);
+	GHOST_TSuccess invalidate();
+	const GHOST_TabletData *GetTabletData();
+	GHOST_TSuccess beginFullScreen() const;
+	GHOST_TSuccess endFullScreen() const;
+	GHOST_Context *newDrawingContext(GHOST_TDrawingContextType type);
+	GHOST_TSuccess setWindowCursorVisibility(bool visible);
+	GHOST_TSuccess setWindowCursorShape(GHOST_TStandardCursor shape);
+	GHOST_TSuccess setWindowCustomCursorShape(
+	        GHOST_TUns8 bitmap[16][2], GHOST_TUns8 mask[16][2],
+	        GHOST_TUns32 hotX, GHOST_TUns32 hotY);
+	GHOST_TSuccess setWindowCustomCursorShape(
+	        GHOST_TUns8 *bitmap, GHOST_TUns8 *mask,
+	        int sizex, int sizey, int hotX, int hotY,
+	        int fgColor, int bgColor);
 
 private:
 	ANativeWindow *m_nativeWindow;

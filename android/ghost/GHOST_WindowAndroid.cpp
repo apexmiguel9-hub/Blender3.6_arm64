@@ -6,7 +6,7 @@ GHOST_WindowAndroid::GHOST_WindowAndroid(
         GHOST_TInt32 width, GHOST_TInt32 height,
         bool stereoVisual, bool alphaBackground,
         GHOST_TUns16 numOfAASamples)
-    : GHOST_Window(stereoVisual, alphaBackground, numOfAASamples),
+    : GHOST_Window(width, height, GHOST_kWindowStateNormal, stereoVisual, false, numOfAASamples),
       m_nativeWindow(nativeWindow),
       m_display(EGL_NO_DISPLAY),
       m_surface(EGL_NO_SURFACE),
@@ -83,8 +83,8 @@ GHOST_TSuccess GHOST_WindowAndroid::setNativeWindow(ANativeWindow *win, int w, i
 }
 
 bool GHOST_WindowAndroid::getValid() const { return m_valid; }
-void GHOST_WindowAndroid::setTitle(const GHOST_TUns8 *) {}
-std::string GHOST_WindowAndroid::getTitle() const { return "Blender"; }
+void GHOST_WindowAndroid::setTitle(const STR_String &) {}
+void GHOST_WindowAndroid::getTitle(STR_String &title) const { title = "Blender"; }
 void GHOST_WindowAndroid::getWindowBounds(GHOST_Rect &b) const { b = m_clientBounds; }
 void GHOST_WindowAndroid::getClientBounds(GHOST_Rect &b) const { b = m_clientBounds; }
 GHOST_TSuccess GHOST_WindowAndroid::setClientWidth(GHOST_TUns32 w)
@@ -105,3 +105,22 @@ GHOST_TSuccess GHOST_WindowAndroid::setSwapInterval(int i)
 { return eglSwapInterval(m_display, i) ? GHOST_kSuccess : GHOST_kFailure; }
 GHOST_TSuccess GHOST_WindowAndroid::getSwapInterval(int &i)
 { (void)i; return GHOST_kFailure; }
+
+GHOST_TWindowState GHOST_WindowAndroid::getState() const { return GHOST_kWindowStateNormal; }
+GHOST_TSuccess GHOST_WindowAndroid::setState(GHOST_TWindowState) { return GHOST_kSuccess; }
+GHOST_TSuccess GHOST_WindowAndroid::setOrder(GHOST_TWindowOrder) { return GHOST_kSuccess; }
+GHOST_TSuccess GHOST_WindowAndroid::invalidate() { return GHOST_kSuccess; }
+const GHOST_TabletData *GHOST_WindowAndroid::GetTabletData() { return NULL; }
+GHOST_TSuccess GHOST_WindowAndroid::beginFullScreen() const { return GHOST_kFailure; }
+GHOST_TSuccess GHOST_WindowAndroid::endFullScreen() const { return GHOST_kFailure; }
+GHOST_Context *GHOST_WindowAndroid::newDrawingContext(GHOST_TDrawingContextType)
+{ return NULL; }
+GHOST_TSuccess GHOST_WindowAndroid::setWindowCursorVisibility(bool) { return GHOST_kSuccess; }
+GHOST_TSuccess GHOST_WindowAndroid::setWindowCursorShape(GHOST_TStandardCursor)
+{ return GHOST_kSuccess; }
+GHOST_TSuccess GHOST_WindowAndroid::setWindowCustomCursorShape(
+        GHOST_TUns8[16][2], GHOST_TUns8[16][2], GHOST_TUns32, GHOST_TUns32)
+{ return GHOST_kSuccess; }
+GHOST_TSuccess GHOST_WindowAndroid::setWindowCustomCursorShape(
+        GHOST_TUns8 *, GHOST_TUns8 *, int, int, int, int, int, int)
+{ return GHOST_kSuccess; }

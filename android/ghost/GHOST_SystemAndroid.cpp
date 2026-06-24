@@ -1,5 +1,5 @@
 #include "GHOST_SystemAndroid.h"
-#include <android/native_window.h>
+#include <android/native_window_jni.h>
 #include <jni.h>
 
 GHOST_SystemAndroid::GHOST_SystemAndroid() : m_window(NULL) {}
@@ -8,22 +8,47 @@ GHOST_SystemAndroid::~GHOST_SystemAndroid() {}
 bool GHOST_SystemAndroid::processEvents(bool) { return false; }
 int GHOST_SystemAndroid::toggleConsole(int) { return 0; }
 
+GHOST_TUns8 GHOST_SystemAndroid::getNumDisplays() const { return 1; }
+
+void GHOST_SystemAndroid::getMainDisplayDimensions(
+        GHOST_TUns32 &width, GHOST_TUns32 &height) const
+{ width = 0; height = 0; }
+
+void GHOST_SystemAndroid::getAllDisplayDimensions(
+        GHOST_TUns32 &width, GHOST_TUns32 &height) const
+{ width = 0; height = 0; }
+
+GHOST_IWindow *GHOST_SystemAndroid::createWindow(
+        const STR_String &,
+        GHOST_TInt32, GHOST_TInt32,
+        GHOST_TUns32 width, GHOST_TUns32 height,
+        GHOST_TWindowState,
+        GHOST_TDrawingContextType,
+        GHOST_GLSettings,
+        const bool,
+        const GHOST_TEmbedderWindowID)
+{
+	/* Android windows are created via JNI, not this method */
+	(void)width; (void)height;
+	return NULL;
+}
+
 GHOST_TSuccess GHOST_SystemAndroid::getCursorPosition(GHOST_TInt32 &x, GHOST_TInt32 &y) const
 { x = 0; y = 0; return GHOST_kSuccess; }
 GHOST_TSuccess GHOST_SystemAndroid::setCursorPosition(GHOST_TInt32 x, GHOST_TInt32 y)
 { (void)x; (void)y; return GHOST_kSuccess; }
-GHOST_TSuccess GHOST_SystemAndroid::getCursorGrabState(bool &g, bool &h) const
-{ g = false; h = true; return GHOST_kSuccess; }
-GHOST_TSuccess GHOST_SystemAndroid::setCursorGrabState(bool g, bool h)
-{ (void)g; (void)h; return GHOST_kSuccess; }
-GHOST_TSuccess GHOST_SystemAndroid::getCursorVisibility(bool &v) const
-{ v = true; return GHOST_kSuccess; }
-GHOST_TSuccess GHOST_SystemAndroid::setCursorVisibility(bool v)
-{ (void)v; return GHOST_kSuccess; }
-GHOST_TSuccess GHOST_SystemAndroid::getModifierKeys(GHOST_ModifierKeys &k) const
-{ k.clear(); return GHOST_kSuccess; }
-GHOST_TSuccess GHOST_SystemAndroid::getButtons(GHOST_Buttons &b) const
-{ b.clear(); return GHOST_kSuccess; }
+GHOST_TSuccess GHOST_SystemAndroid::getCursorGrabState(bool &grab, bool &hide) const
+{ grab = false; hide = true; return GHOST_kSuccess; }
+GHOST_TSuccess GHOST_SystemAndroid::setCursorGrabState(bool grab, bool hide)
+{ (void)grab; (void)hide; return GHOST_kSuccess; }
+GHOST_TSuccess GHOST_SystemAndroid::getCursorVisibility(bool &visible) const
+{ visible = true; return GHOST_kSuccess; }
+GHOST_TSuccess GHOST_SystemAndroid::setCursorVisibility(bool visible)
+{ (void)visible; return GHOST_kSuccess; }
+GHOST_TSuccess GHOST_SystemAndroid::getModifierKeys(GHOST_ModifierKeys &keys) const
+{ keys.clear(); return GHOST_kSuccess; }
+GHOST_TSuccess GHOST_SystemAndroid::getButtons(GHOST_Buttons &buttons) const
+{ buttons.clear(); return GHOST_kSuccess; }
 GHOST_TSuccess GHOST_SystemAndroid::setCursorShape(GHOST_TStandardCursor) { return GHOST_kSuccess; }
 GHOST_TSuccess GHOST_SystemAndroid::hasCursorShape(GHOST_TStandardCursor) { return GHOST_kFailure; }
 GHOST_TSuccess GHOST_SystemAndroid::setCustomCursorShape(
@@ -40,6 +65,12 @@ GHOST_TSuccess GHOST_SystemAndroid::getClientBounds(
 	if (m_window) { bounds = m_window->getClientBounds(); return GHOST_kSuccess; }
 	return GHOST_kFailure;
 }
+
+GHOST_TUns8 *GHOST_SystemAndroid::getClipboard(bool selection) const
+{ (void)selection; return NULL; }
+
+void GHOST_SystemAndroid::putClipboard(GHOST_TInt8 *buffer, bool selection) const
+{ (void)buffer; (void)selection; }
 
 /* JNI C API for Android */
 static GHOST_SystemAndroid *g_sys = NULL;
