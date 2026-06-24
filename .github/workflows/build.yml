@@ -1,0 +1,156 @@
+name: Build Blender 2.79b Android .so
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      config:
+        description: 'Feature config (modelling, animation, full)'
+        required: true
+        default: 'modelling'
+
+env:
+  BLENDER_VERSION: 2.79b
+  ANDROID_API: 24
+  NDK_VERSION: r26b
+
+jobs:
+  build:
+    name: Build for ${{ matrix.arch }}
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        arch: [arm64]
+        # arch: [arm64, armv7a]
+      fail-fast: false
+
+    steps:
+      - name: Checkout Blender 2.79b
+        uses: actions/checkout@v4
+        with:
+          repository: blender/blender
+          ref: v2.79b
+          path: blender279
+
+      - name: Checkout GL4ES
+        uses: actions/checkout@v4
+        with:
+          repository: ptitSeb/gl4es
+          path: gl4es
+
+      - name: Checkout project patches
+        uses: actions/checkout@v4
+        with:
+          path: patches
+
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: ${{ env.NDK_VERSION }}
+          add-to-path: false
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake make ninja-build \
+            libx11-dev libxi-dev \
+            libssl-dev \
+            python3 python3-dev \
+            pkg-config \
+            bison flex \
+            libxml2-dev \
+            yasm \
+            libtheora-dev \
+            libvorbis-dev \
+            libogg-dev \
+            libsdl2-dev \
+            libopenjpeg-dev \
+            libjpeg-dev \
+            libpng-dev \
+            libtiff-dev \
+            gettext
+
+      - name: Apply Blender patches
+        run: |
+          cd blender279
+          git apply ../patches/patches/*.patch || true
+
+      - name: Build GL4ES for Android
+        run: |
+          cd gl4es
+          mkdir build && cd build
+          cmake .. \
+            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=${{ env.ANDROID_API }} \
+            -DCMAKE_INSTALL_PREFIX=../install \
+            -DSTATICLIB=ON \
+            -DDEFAULT_ES=2 \
+            -DNO_INIT_CONSTRUCTOR=ON
+          make -j$(nproc)
+          make install
+
+      - name: Configure Blender for Android
+        run: |
+          mkdir blender279/build
+          cd blender279/build
+          cmake .. \
+            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=${{ env.ANDROID_API }} \
+            -DCMAKE_INSTALL_PREFIX=../install \
+            -DWITH_BLENDER=ON \
+            -DWITH_PLAYER=OFF \
+            -DWITH_CYCLES=ON \
+            -DWITH_GAMEENGINE=OFF \
+            -DWITH_COMPOSITOR=OFF \
+            -DWITH_FREESTYLE=OFF \
+            -DWITH_OPENCOLORIO=OFF \
+            -DWITH_OPENVDB=OFF \
+            -DWITH_CODEC_FFMPEG=OFF \
+            -DWITH_CODEC_SNDFILE=OFF \
+            -DWITH_OPENAL=OFF \
+            -DWITH_SDL=ON \
+            -DWITH_GL_EGL=ON \
+            -DWITH_SYSTEM_GLES=ON \
+            -DWITH_PYTHON=ON \
+            -DWITH_INTERNATIONAL=OFF \
+            -DWITH_INSTALL_PORTABLE=ON \
+            -DWITH_GHOST_DEBUG=OFF \
+            -DOPENGLES_LIBRARY=${{ github.workspace }}/gl4es/install/lib/libGLESv2.so \
+            -DOPENGLES_EGL_LIBRARY=${{ github.workspace }}/gl4es/install/lib/libEGL.so \
+            -DCMAKE_C_FLAGS="-fPIC -static-libgcc" \
+            -DCMAKE_CXX_FLAGS="-fPIC -static-libstdc++" \
+            -DCMAKE_EXE_LINKER_FLAGS="-static-libgcc -static-libstdc++" \
+            -DCMAKE_SHARED_LINKER_FLAGS="-static-libgcc -static-libstdc++"
+
+      - name: Build Blender as shared library
+        run: |
+          cd blender279/build
+          # Override the executable build to produce .so
+          cmake -DBUILD_SHARED_LIBS=ON .
+          make -j$(nproc) blender
+          
+          # Rename the output
+          mkdir -p ${{ github.workspace }}/output
+          if [ -f bin/blender ]; then
+            cp bin/blender ${{ github.workspace }}/output/libblender279.so
+          elif [ -f lib/blender.so ]; then
+            cp lib/blender.so ${{ github.workspace }}/output/libblender279.so
+          fi
+
+      - name: Bundle GL4ES with Blender
+        run: |
+          cp ${{ github.workspace }}/gl4es/install/lib/libGL.so ${{ github.workspace }}/output/
+          cp ${{ github.workspace }}/gl4es/install/lib/libEGL.so ${{ github.workspace }}/output/
+          cp ${{ github.workspace }}/gl4es/install/lib/libGLESv2.so ${{ github.workspace }}/output/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: blender279-${{ matrix.arch }}-${{ github.event.inputs.config || 'modelling' }}
+          path: ${{ github.workspace }}/output/*

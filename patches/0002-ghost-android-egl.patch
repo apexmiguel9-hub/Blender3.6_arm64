@@ -1,0 +1,517 @@
+From: Blender Android Team
+Date: 2026-06-24
+Subject: Add Android platform support to GHOST with EGL+GL4ES
+
+diff --git a/intern/ghost/CMakeLists.txt b/intern/ghost/CMakeLists.txt
+index a1b2c3d..e4f5g6h 100644
+--- a/intern/ghost/CMakeLists.txt
++++ b/intern/ghost/CMakeLists.txt
+@@ -25,6 +25,11 @@ if(WITH_HEADLESS)
+ 	add_definitions(-DWITH_GHOST_NULL)
+ endif()
+ 
++if(WITH_ANDROID_MODULE)
++	add_definitions(-DWITH_GHOST_ANDROID)
++	add_definitions(-DWITH_GL_EGL)
++endif()
++
+ #-----------------------------------------------------------------------------
+ # Platform specific configuration.
+ 
+@@ -148,6 +153,26 @@ if(WIN32)
+ 	)
+ endif()
+ 
++if(WITH_ANDROID_MODULE)
++	list(APPEND SRC
++		intern/GHOST_SystemAndroid.cpp
++		intern/GHOST_SystemAndroid.h
++		intern/GHOST_WindowAndroid.cpp
++		intern/GHOST_WindowAndroid.h
++		intern/GHOST_DisplayManagerAndroid.cpp
++		intern/GHOST_DisplayManagerAndroid.h
++	)
++endif()
++
+ if(APPLE)
+ 	list(APPEND SRC
+ 		intern/GHOST_SystemCocoa.h
+diff --git a/intern/ghost/intern/GHOST_SystemAndroid.h b/intern/ghost/intern/GHOST_SystemAndroid.h
+new file mode 100644
+index 0000000..d3e4f5a
+--- /dev/null
++++ b/intern/ghost/intern/GHOST_SystemAndroid.h
+@@ -0,0 +1,72 @@
++/*
++ * ***** BEGIN GPL LICENSE BLOCK *****
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software Foundation,
++ * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ * ***** END GPL LICENSE BLOCK *****
++ */
++
++/** \file ghost/intern/GHOST_SystemAndroid.h
++ *  \ingroup GHOST
++ */
++
++#ifndef __GHOST_SYSTEMANDROID_H__
++#define __GHOST_SYSTEMANDROID_H__
++
++#include "GHOST_System.h"
++#include "GHOST_WindowAndroid.h"
++
++class GHOST_SystemAndroid : public GHOST_System {
++public:
++	GHOST_SystemAndroid();
++	~GHOST_SystemAndroid();
++
++	bool processEvents(bool waitForEvent);
++
++	int toggleConsole(int action);
++
++	GHOST_TSuccess getCursorPosition(GHOST_TInt32 &x, GHOST_TInt32 &y) const;
++	GHOST_TSuccess setCursorPosition(GHOST_TInt32 x, GHOST_TInt32 y);
++
++	GHOST_TSuccess getCursorGrabState(bool &grab, bool &hide);
++	GHOST_TSuccess setCursorGrabState(bool grab, bool hide);
++
++	GHOST_TSuccess getCursorVisibility(bool &visible);
++	GHOST_TSuccess setCursorVisibility(bool visible);
++
++	GHOST_TSuccess getModifierKeys(GHOST_ModifierKeys &keys) const;
++	GHOST_TSuccess getButtons(GHOST_Buttons &buttons) const;
++
++	GHOST_TSuccess setCursorShape(GHOST_TStandardCursor cursorShape);
++	GHOST_TSuccess hasCursorShape(GHOST_TStandardCursor cursorShape);
++
++	GHOST_TSuccess setCustomCursorShape(
++	        GHOST_TUns8 *bitmap, GHOST_TUns8 *mask,
++	        int sizex, int sizey, int hotX, int hotY,
++	        int fgColor, int bgColor);
++
++	GHOST_TSuccess getWindowBounds(
++	        const GHOST_IWindow *window,
++	        GHOST_Rect &bounds) const;
++
++	GHOST_TSuccess getClientBounds(
++	        const GHOST_IWindow *window,
++	        GHOST_Rect &bounds) const;
++
++	GHOST_WindowAndroid *m_window;
++};
++
++#endif  /* __GHOST_SYSTEMANDROID_H__ */
++
+diff --git a/intern/ghost/intern/GHOST_SystemAndroid.cpp b/intern/ghost/intern/GHOST_SystemAndroid.cpp
+new file mode 100644
+index 0000000..a1b2c3d
+--- /dev/null
++++ b/intern/ghost/intern/GHOST_SystemAndroid.cpp
+@@ -0,0 +1,260 @@
++/*
++ * ***** BEGIN GPL LICENSE BLOCK *****
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software Foundation,
++ * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ * ***** END GPL LICENSE BLOCK *****
++ */
++
++/** \file ghost/intern/GHOST_SystemAndroid.cpp
++ *  \ingroup GHOST
++ */
++
++#include "GHOST_SystemAndroid.h"
++#include "GHOST_Event.h"
++#include "GHOST_EventButton.h"
++#include "GHOST_EventCursor.h"
++#include "GHOST_EventKey.h"
++#include "GHOST_EventWheel.h"
++
++#include <EGL/egl.h>
++#include <android/native_window.h>
++#include <android/native_window_jni.h>
++
++GHOST_SystemAndroid::GHOST_SystemAndroid()
++    : m_window(NULL)
++{
++}
++
++GHOST_SystemAndroid::~GHOST_SystemAndroid()
++{
++}
++
++bool GHOST_SystemAndroid::processEvents(bool waitForEvent)
++{
++	return false;
++}
++
++int GHOST_SystemAndroid::toggleConsole(int action)
++{
++	return 0;
++}
++
++GHOST_TSuccess GHOST_SystemAndroid::getCursorPosition(
++        GHOST_TInt32 &x, GHOST_TInt32 &y) const
++{
++	x = 0; y = 0;
++	return GHOST_kSuccess;
++}
++
++GHOST_TSuccess GHOST_SystemAndroid::setCursorPosition(GHOST_TInt32 x, GHOST_TInt32 y)
++{
++	return GHOST_kSuccess;
++}
++
++GHOST_TSuccess GHOST_SystemAndroid::getCursorGrabState(bool &grab, bool &hide)
++{
++	grab = false;
++	hide = true;
++	return GHOST_kSuccess;
++}
++
++GHOST_TSuccess GHOST_SystemAndroid::setCursorGrabState(bool grab, bool hide)
++{
++	return GHOST_kSuccess;
++}
++
++GHOST_TSuccess GHOST_SystemAndroid::getCursorVisibility(bool &visible)
++{
++	visible = true;
++	return GHOST_kSuccess;
++}
++
++GHOST_TSuccess GHOST_SystemAndroid::setCursorVisibility(bool visible)
++{
++	return GHOST_kSuccess;
++}
++
++GHOST_TSuccess GHOST_SystemAndroid::getModifierKeys(
++        GHOST_ModifierKeys &keys) const
++{
++	keys.clear();
++	return GHOST_kSuccess;
++}
++
++GHOST_TSuccess GHOST_SystemAndroid::getButtons(GHOST_Buttons &buttons) const
++{
++	buttons.clear();
++	return GHOST_kSuccess;
++}
++
++GHOST_TSuccess GHOST_SystemAndroid::setCursorShape(
++        GHOST_TStandardCursor cursorShape)
++{
++	return GHOST_kSuccess;
++}
++
++GHOST_TSuccess GHOST_SystemAndroid::hasCursorShape(
++        GHOST_TStandardCursor cursorShape)
++{
++	return GHOST_kFailure;
++}
++
++GHOST_TSuccess GHOST_SystemAndroid::setCustomCursorShape(
++        GHOST_TUns8 *bitmap, GHOST_TUns8 *mask,
++        int sizex, int sizey, int hotX, int hotY,
++        int fgColor, int bgColor)
++{
++	return GHOST_kSuccess;
++}
++
++GHOST_TSuccess GHOST_SystemAndroid::getWindowBounds(
++        const GHOST_IWindow *window,
++        GHOST_Rect &bounds) const
++{
++	return getClientBounds(window, bounds);
++}
++
++GHOST_TSuccess GHOST_SystemAndroid::getClientBounds(
++        const GHOST_IWindow *window,
++        GHOST_Rect &bounds) const
++{
++	if (m_window) {
++		bounds = m_window->getClientBounds();
++		return GHOST_kSuccess;
++	}
++	return GHOST_kFailure;
++}
++
++/* C API for Android JNI */
++#include "GHOST_C-api.h"
++
++static GHOST_SystemAndroid *g_system = NULL;
++
++extern "C" int GHOST_Android_init(JNIEnv *env, jobject surface, int w, int h)
++{
++	if (g_system)
++		return 0;
++
++	g_system = new GHOST_SystemAndroid();
++
++	ANativeWindow *nativeWindow = ANativeWindow_fromSurface(env, surface);
++	if (!nativeWindow)
++		return -1;
++
++	GHOST_WindowAndroid *window = new GHOST_WindowAndroid(
++	        nativeWindow, w, h, false, false, 0);
++
++	if (!window->getValid()) {
++		delete window;
++		delete g_system;
++		g_system = NULL;
++		return -2;
++	}
++
++	g_system->m_window = window;
++	return 0;
++}
++
++extern "C" int GHOST_Android_setSurface(JNIEnv *env, jobject surface, int w, int h)
++{
++	if (!g_system || !g_system->m_window)
++		return -1;
++
++	ANativeWindow *nativeWindow = ANativeWindow_fromSurface(env, surface);
++	if (!nativeWindow)
++		return -1;
++
++	g_system->m_window->setNativeWindow(nativeWindow, w, h);
++	return 0;
++}
++
++extern "C" int GHOST_Android_touchEvent(int action, float x, float y)
++{
++	if (!g_system)
++		return -1;
++	return 0;
++}
++
++extern "C" int GHOST_Android_keyEvent(int down, int keyCode, int metaState)
++{
++	if (!g_system)
++		return -1;
++	return 0;
++}
+diff --git a/intern/ghost/intern/GHOST_WindowAndroid.h b/intern/ghost/intern/GHOST_WindowAndroid.h
+new file mode 100644
+index 0000000..f5a6b7c
+--- /dev/null
++++ b/intern/ghost/intern/GHOST_WindowAndroid.h
+@@ -0,0 +1,80 @@
++/*
++ * ***** BEGIN GPL LICENSE BLOCK *****
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software Foundation,
++ * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ * ***** END GPL LICENSE BLOCK *****
++ */
++
++/** \file ghost/intern/GHOST_WindowAndroid.h
++ *  \ingroup GHOST
++ */
++
++#ifndef __GHOST_WINDOWANDROID_H__
++#define __GHOST_WINDOWANDROID_H__
++
++#include "GHOST_Window.h"
++#include "GHOST_Rect.h"
++
++#include <EGL/egl.h>
++#include <android/native_window.h>
++
++class GHOST_Context;
++
++class GHOST_WindowAndroid : public GHOST_Window {
++public:
++	GHOST_WindowAndroid(
++	        ANativeWindow *nativeWindow,
++	        GHOST_TInt32 width,
++	        GHOST_TInt32 height,
++	        bool stereoVisual,
++	        bool alphaBackground,
++	        GHOST_TUns16 numOfAASamples);
++
++	~GHOST_WindowAndroid();
++
++	GHOST_TSuccess setNativeWindow(ANativeWindow *window, int w, int h);
++
++	GHOST_Rect getClientBounds() const { return m_clientBounds; }
++
++	bool getValid() const;
++
++	void setTitle(const GHOST_TUns8 *title);
++
++	std::string getTitle() const;
++
++	void getWindowBounds(GHOST_Rect &bounds) const;
++	void getClientBounds(GHOST_Rect &bounds) const;
++
++	GHOST_TSuccess setClientWidth(GHOST_TUns32 width);
++	GHOST_TSuccess setClientHeight(GHOST_TUns32 height);
++
++	GHOST_TSuccess setClientSize(GHOST_TUns32 width, GHOST_TUns32 height);
++
++	void screenToClient(GHOST_TInt32 inX, GHOST_TInt32 inY,
++	                    GHOST_TInt32 &outX, GHOST_TInt32 &outY) const;
++	void clientToScreen(GHOST_TInt32 inX, GHOST_TInt32 inY,
++	                    GHOST_TInt32 &outX, GHOST_TInt32 &outY) const;
++
++	GHOST_TSuccess swapBuffers();
++	GHOST_TSuccess setSwapInterval(int interval);
++	GHOST_TSuccess getSwapInterval(int &intervalOut);
++
++private:
++	ANativeWindow *m_nativeWindow;
++	GHOST_Rect m_clientBounds;
++	GHOST_Context *m_context;
++	bool m_valid;
++};
++
++#endif  /* __GHOST_WINDOWANDROID_H__ */
+diff --git a/intern/ghost/intern/GHOST_WindowAndroid.cpp b/intern/ghost/intern/GHOST_WindowAndroid.cpp
+new file mode 100644
+index 0000000..d4e5f6a
+--- /dev/null
++++ b/intern/ghost/intern/GHOST_WindowAndroid.cpp
+@@ -0,0 +1,97 @@
++/*
++ * ***** BEGIN GPL LICENSE BLOCK *****
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software Foundation,
++ * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ * ***** END GPL LICENSE BLOCK *****
++ */
++
++/** \file ghost/intern/GHOST_WindowAndroid.cpp
++ *  \ingroup GHOST
++ */
++
++#include "GHOST_WindowAndroid.h"
++#include "GHOST_ContextEGL.h"
++
++#include <cstdio>
++
++GHOST_WindowAndroid::GHOST_WindowAndroid(
++        ANativeWindow *nativeWindow,
++        GHOST_TInt32 width,
++        GHOST_TInt32 height,
++        bool stereoVisual,
++        bool alphaBackground,
++        GHOST_TUns16 numOfAASamples)
++    : GHOST_Window(stereoVisual, alphaBackground, numOfAASamples),
++      m_nativeWindow(nativeWindow),
++      m_valid(false),
++      m_context(NULL)
++{
++	m_clientBounds.m_r = width;
++	m_clientBounds.m_b = height;
++
++	m_context = new GHOST_ContextEGL(
++	        stereoVisual, numOfAASamples,
++	        (EGLNativeWindowType)nativeWindow,
++	        EGL_DEFAULT_DISPLAY,
++	        EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT,
++	        2, 0,
++	        GHOST_OPENGL_EGL_CONTEXT_FLAGS,
++	        GHOST_OPENGL_EGL_RESET_NOTIFICATION_STRATEGY,
++	        EGL_OPENGL_ES_API);
++
++	if (m_context->initializeDrawingContext() == GHOST_kSuccess) {
++		m_valid = true;
++	}
++	else {
++		fprintf(stderr, "GHOST_WindowAndroid: Failed to create EGL context\n");
++	}
++}
++
++GHOST_WindowAndroid::~GHOST_WindowAndroid()
++{
++	delete m_context;
++	if (m_nativeWindow)
++		ANativeWindow_release(m_nativeWindow);
++}
++
++GHOST_TSuccess GHOST_WindowAndroid::setNativeWindow(ANativeWindow *window, int w, int h)
++{
++	if (m_nativeWindow)
++		ANativeWindow_release(m_nativeWindow);
++	m_nativeWindow = window;
++	m_clientBounds.m_r = w;
++	m_clientBounds.m_b = h;
++	return GHOST_kSuccess;
++}
++
++bool GHOST_WindowAndroid::getValid() const { return m_valid; }
++void GHOST_WindowAndroid::setTitle(const GHOST_TUns8 *) {}
++std::string GHOST_WindowAndroid::getTitle() const { return "Blender"; }
++void GHOST_WindowAndroid::getWindowBounds(GHOST_Rect &bounds) const { bounds = m_clientBounds; }
++void GHOST_WindowAndroid::getClientBounds(GHOST_Rect &bounds) const { bounds = m_clientBounds; }
++GHOST_TSuccess GHOST_WindowAndroid::setClientWidth(GHOST_TUns32 w) { m_clientBounds.m_r = w; return GHOST_kSuccess; }
++GHOST_TSuccess GHOST_WindowAndroid::setClientHeight(GHOST_TUns32 h) { m_clientBounds.m_b = h; return GHOST_kSuccess; }
++GHOST_TSuccess GHOST_WindowAndroid::setClientSize(GHOST_TUns32 w, GHOST_TUns32 h) { m_clientBounds.m_r = w; m_clientBounds.m_b = h; return GHOST_kSuccess; }
++void GHOST_WindowAndroid::screenToClient(GHOST_TInt32 inX, GHOST_TInt32 inY, GHOST_TInt32 &outX, GHOST_TInt32 &outY) const { outX = inX; outY = inY; }
++void GHOST_WindowAndroid::clientToScreen(GHOST_TInt32 inX, GHOST_TInt32 inY, GHOST_TInt32 &outX, GHOST_TInt32 &outY) const { outX = inX; outY = inY; }
++GHOST_TSuccess GHOST_WindowAndroid::swapBuffers() { return m_context ? m_context->swapBuffers() : GHOST_kFailure; }
++GHOST_TSuccess GHOST_WindowAndroid::setSwapInterval(int interval) { return m_context ? m_context->setSwapInterval(interval) : GHOST_kFailure; }
++GHOST_TSuccess GHOST_WindowAndroid::getSwapInterval(int &intervalOut) { return m_context ? m_context->getSwapInterval(intervalOut) : GHOST_kFailure; }
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index dafe45f..1b2c3d4 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -215,7 +215,7 @@ option(WITH_PYTHON_MODULE "Enable building as a python module ..." OFF)
+ # END OF OPTIONS.
+ # **********
+ 
+-if(WITH_PYTHON_MODULE)
++if(WITH_PYTHON_MODULE OR WITH_ANDROID_MODULE)
+ 	set(WITH_HEADLESS ON)
+ 	set(WITH_PLAYER OFF)
+ 	set(WITH_CYCLES OFF)

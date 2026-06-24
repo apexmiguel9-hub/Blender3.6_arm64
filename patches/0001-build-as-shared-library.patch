@@ -1,0 +1,77 @@
+From: Blender Android Team
+Date: 2026-06-24
+Subject: Build Blender 2.79b as shared library (.so) for Android
+
+diff --git a/source/creator/CMakeLists.txt b/source/creator/CMakeLists.txt
+index 5d7a4c4..f3b2e1a 100644
+--- a/source/creator/CMakeLists.txt
++++ b/source/creator/CMakeLists.txt
+@@ -214,11 +214,13 @@ endif()
+ 
+ add_cc_flags_custom_test(blender)
+ 
+-# message(STATUS "Configuring blender")
+-if(WITH_PYTHON_MODULE)
++option(WITH_ANDROID_MODULE "Build Blender as Android shared library (.so)" OFF)
++
++if(WITH_ANDROID_MODULE OR WITH_PYTHON_MODULE)
+ 	add_definitions(-DWITH_PYTHON_MODULE)
+ 
+-	# creates ./bin/bpy.so which can be imported as a python module.
++	# creates ./bin/libblender.so for Android
++	# or ./bin/bpy.so for Python module
+ 	#
+ 	# note that 'SHARED' works on Linux and Windows,
+ 	# but not OSX which _must_ be 'MODULE'
+@@ -227,7 +229,15 @@ if(WITH_PYTHON_MODULE)
+ 	set_target_properties(
+ 		blender
+ 		PROPERTIES
++		PREFIX "lib"
++	)
++
++	if(WITH_ANDROID_MODULE)
++		set_target_properties(
++			blender
++			PROPERTIES
++			OUTPUT_NAME blender
++			LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
++			RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
++		)
++	else()
++		set_target_properties(
++			blender
++			PROPERTIES
+ 			PREFIX ""
+ 			OUTPUT_NAME bpy
+ 			LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
+ 			RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin  # only needed on windows
+-	)
++		)
++	endif()
+ 
+ 	if(APPLE)
+ 		set_target_properties(
+diff --git a/source/creator/creator.c b/source/creator/creator.c
+index 9f3d8c7..b2e4f6a 100644
+--- a/source/creator/creator.c
++++ b/source/creator/creator.c
+@@ -192,7 +192,7 @@ static void callback_main_atexit(void *user_data)
+ /** \name Main Function
+  * \{ */
+ 
+-#ifdef WITH_PYTHON_MODULE
++#if defined(WITH_PYTHON_MODULE) || defined(WITH_ANDROID_MODULE)
+ /* allow python module to call main */
+ #  define main main_python_enter
+ static void *evil_C = NULL;
+@@ -211,7 +211,8 @@ char **environ = NULL;
+ int main(
+         int argc,
+-#ifdef WIN32
++#ifdef WITH_ANDROID_MODULE
++        const char **argv
++#elif defined(WIN32)
+         const char **UNUSED(argv_c)
+ #else
+         const char **argv

@@ -1,0 +1,29 @@
+From: Blender Android Team
+Date: 2026-06-24
+Subject: Add WITH_ANDROID_MODULE option to root CMakeLists.txt
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index dafe45f..8h7i9j0 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -215,16 +215,15 @@ option(WITH_PYTHON_MODULE "Enable building as a python module which runs without
+ # END OF OPTIONS.
+ # **********
+ 
+-if(WITH_PYTHON_MODULE)
++if(WITH_ANDROID_MODULE)
++	set(WITH_HEADLESS OFF)
++	set(WITH_PLAYER OFF)
++	# Keep Cycles, compositor, etc. for Android
++elseif(WITH_PYTHON_MODULE)
+ 	set(WITH_HEADLESS ON)
+ 	set(WITH_PLAYER OFF)
+ 	set(WITH_CYCLES OFF)
+ 	set(WITH_COMPOSITOR OFF)
+ endif()
+ 
+-if(WITH_PYTHON_MODULE)
++if(WITH_PYTHON_MODULE OR WITH_ANDROID_MODULE)
+ 	# Python module dependencies
+ 	set(WITH_GAMEENGINE OFF)
+ 	set(WITH_FREESTYLE OFF)
