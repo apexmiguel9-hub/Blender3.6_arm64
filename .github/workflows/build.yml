@@ -57,6 +57,26 @@ jobs:
             blender36/source/blender/blenlib/intern/system.c
           echo "=== Patched paths ==="
 
+      - name: Build native host tools (datatoc)
+        run: |
+          mkdir -p /tmp/host_tools
+          # Compile datatoc natively for x86_64, since cross-compiled ARM64
+          # versions can't run under QEMU (missing Android linker).
+          gcc -o /tmp/host_tools/datatoc \
+            -I blender36/source/blender/datatoc \
+            -I blender36/source/blender/makesdna \
+            -I blender36/source/blender/blenlib \
+            blender36/source/blender/datatoc/datatoc.c
+          # datatoc_icon also needs libpng-dev
+          sudo apt-get install -y libpng-dev 2>/dev/null || true
+          gcc -o /tmp/host_tools/datatoc_icon \
+            -I blender36/source/blender/datatoc \
+            -I blender36/source/blender/makesdna \
+            -I blender36/source/blender/blenlib \
+            blender36/source/blender/datatoc/datatoc_icon.c \
+            -lpng -lz -lm
+          echo "=== Host tools built ==="
+
       - name: Configure Blender 3.6 for Android
         id: configure
         run: |
@@ -132,6 +152,30 @@ jobs:
           cat blender36/build/cmake_config.log
           echo "=== CMakeError.log ==="
           cat blender36/build/CMakeFiles/CMakeError.log 2>/dev/null || true
+
+      - name: Patch build rules for host tools
+        if: steps.configure.outcome == 'success'
+        run: |
+          # Replace build rules for datatoc/datatoc_icon with native binary copies
+          # so ninja doesn't try to run ARM64 versions under QEMU.
+          cd blender36/build
+          python3 << 'PYEOF'
+import pathlib
+ninja = pathlib.Path('build.ninja').read_text()
+# Replace the link rule for bin/datatoc binary with a copy command
+import re
+# Find the build rule for bin/datatoc
+ninja = re.sub(
+    r'build bin/datatoc: CXX_EXECUTABLE_LINKER.*?(?=\n\n|\Z)',
+    r'build bin/datatoc: CUSTOM_COMMAND\n  command = cp /tmp/host_tools/datatoc $out\n  description = Copy native datatoc',
+    ninja, count=1, flags=re.DOTALL)
+ninja = re.sub(
+    r'build bin/datatoc_icon: CXX_EXECUTABLE_LINKER.*?(?=\n\n|\Z)',
+    r'build bin/datatoc_icon: CUSTOM_COMMAND\n  command = cp /tmp/host_tools/datatoc_icon $out\n  description = Copy native datatoc_icon',
+    ninja, count=1, flags=re.DOTALL)
+pathlib.Path('build.ninja').write_text(ninja)
+print("build.ninja patched for datatoc/datatoc_icon")
+PYEOF
 
       - name: Build Blender
         if: steps.configure.outcome == 'success'
