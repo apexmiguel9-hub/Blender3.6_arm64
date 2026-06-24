@@ -119,7 +119,7 @@ GHOST_TSuccess GHOST_WindowAndroid::setWindowCursorVisibility(bool) { return GHO
 GHOST_TSuccess GHOST_WindowAndroid::setWindowCursorShape(GHOST_TStandardCursor)
 { return GHOST_kSuccess; }
 GHOST_TSuccess GHOST_WindowAndroid::setWindowCustomCursorShape(
-        GHOST_TUns8[16][2], GHOST_TUns8[16][2], GHOST_TUns32, GHOST_TUns32)
+        GHOST_TUns8[16][2], GHOST_TUns8[16][2], int, int)
 { return GHOST_kSuccess; }
 GHOST_TSuccess GHOST_WindowAndroid::setWindowCustomCursorShape(
         GHOST_TUns8 *, GHOST_TUns8 *, int, int, int, int, int, int)
