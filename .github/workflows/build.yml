@@ -46,8 +46,10 @@ jobs:
           LIBDIR=${{ github.workspace }}/lib-android_arm64
           # Replace Windows hardcoded paths in Find*.cmake modules
           find blender36/build_files/cmake/Modules -name "Find*.cmake" -exec sed -i "s|D:/FreeProjects/Blender/Blender/lib-android_arm64|$LIBDIR|g" {} +
-          # Also patch the main CMakeLists.txt
+          # Also patch the main CMakeLists.txt and other cmake files
           sed -i "s|D:/FreeProjects/Blender/Blender/lib-android_arm64|$LIBDIR|g" blender36/CMakeLists.txt
+          # Fix double include/include path in Python find module
+          sed -i "s|cpython/include/include/|cpython/include/|g" blender36/build_files/cmake/Modules/FindPythonLibsUnix.cmake
           echo "=== Patched paths ==="
 
       - name: Configure Blender 3.6 for Android
