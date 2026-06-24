@@ -257,6 +257,20 @@ endif()'''
         f.write(content)
     print("    Patched source/creator/creator.c")
 
+    # 7. Fix malloc_stats() not available on Android (bionic libc)
+    print("[7] Patching guardedalloc for Android...")
+    for f in ['mallocn_lockfree_impl.c', 'mallocn_guarded_impl.c']:
+        alloc_file = os.path.join(blender_dir, 'intern', 'guardedalloc', 'intern', f)
+        with open(alloc_file, 'r') as fh:
+            content = fh.read()
+        content = content.replace(
+            '#include "mallocn_intern.h"',
+            '#include "mallocn_intern.h"\n#ifdef __ANDROID__\n/* bionic libc does not have malloc_stats */\n#define malloc_stats()\n#endif'
+        )
+        with open(alloc_file, 'w') as fh:
+            fh.write(content)
+        print(f"    Patched {f}")
+
     print("\n=== All Android patches applied successfully ===")
 
 
