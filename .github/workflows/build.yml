@@ -68,6 +68,31 @@ jobs:
           echo "=== Android libraries ==="
           find $PREFIX -type f | sort
 
+      - name: Build freetype for Android
+        run: |
+          export PREFIX=${{ github.workspace }}/android-libs
+          export TOOLCHAIN=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake
+          export API=${{ env.ANDROID_API }}
+          git clone --depth 1 --branch VER-2-13-3 https://github.com/freetype/freetype /tmp/freetype
+          cmake -S /tmp/freetype -B /tmp/freetype/build \
+            -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE=$TOOLCHAIN \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=$API \
+            -DCMAKE_INSTALL_PREFIX=$PREFIX \
+            -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+            -DFT_WITH_ZLIB=ON \
+            -DZLIB_LIBRARY=$PREFIX/lib/libz.a \
+            -DZLIB_INCLUDE_DIR=$PREFIX/include \
+            -DFT_WITH_BZIP2=OFF \
+            -DFT_WITH_PNG=ON \
+            -DPNG_LIBRARY=$PREFIX/lib/libpng.a \
+            -DPNG_PNG_INCLUDE_DIR=$PREFIX/include \
+            -DBUILD_SHARED_LIBS=OFF
+          ninja -C /tmp/freetype/build install
+          echo "=== Freetype output ==="
+          find $PREFIX -name "*freetype*" -o -name "*freetype*" | sort
+
       - name: Apply Android patches to Blender
         run: |
           python3 ${{ github.workspace }}/scripts/apply_patches.py \
@@ -93,6 +118,21 @@ jobs:
           cp ../lib/libGL.a ${{ github.workspace }}/gl4es-install/lib/
           cp -r ../include/* ${{ github.workspace }}/gl4es-install/include/
           find ${{ github.workspace }}/gl4es-install -type f
+
+      - name: Build GLU stub for Android
+        run: |
+          export PREFIX=${{ github.workspace }}/android-libs
+          export API=${{ env.ANDROID_API }}
+          export CC="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android$API-clang"
+          mkdir -p /tmp/glustub
+          cp ${{ github.workspace }}/android/glu_stub/glu_stub.c /tmp/glustub/
+          $CC -fPIC -c -o /tmp/glustub/glu_stub.o \
+            -I${{ github.workspace }}/gl4es-install/include \
+            /tmp/glustub/glu_stub.c
+          $ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar rcs \
+            $PREFIX/lib/libglu_stub.a /tmp/glustub/glu_stub.o
+          echo "=== GLU stub output ==="
+          ls -la $PREFIX/lib/libglu_stub.a
 
       - name: Configure Blender for Android
         continue-on-error: true
@@ -140,6 +180,9 @@ jobs:
             -DZLIB_LIBRARY=${{ github.workspace }}/android-libs/lib/libz.a \
             -DPNG_LIBRARY=${{ github.workspace }}/android-libs/lib/libpng.a \
             -DJPEG_LIBRARY=${{ github.workspace }}/android-libs/lib/libjpeg.a \
+            -DGLU_STUB_LIBRARY=${{ github.workspace }}/android-libs/lib/libglu_stub.a \
+            -DFREETYPE_LIBRARY=${{ github.workspace }}/android-libs/lib/libfreetype.a \
+            -DFREETYPE_INCLUDE_DIRS=${{ github.workspace }}/android-libs/include/freetype2 \
             -DCMAKE_C_FLAGS="-fPIC -static-libgcc -Os -DANDROID" \
             -DCMAKE_CXX_FLAGS="-fPIC -static-libstdc++ -Os -DANDROID" \
             -DCMAKE_EXE_LINKER_FLAGS="-static-libgcc -static-libstdc++ -Wl,-z,max-page-size=4096" \
