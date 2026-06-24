@@ -271,6 +271,55 @@ endif()'''
             fh.write(content)
         print(f"    Patched {f}")
 
+    # 8. Static-link host tools (datatoc, makesdna, makesrna) so QEMU can run them
+    #    without needing Android system linker (/system/bin/linker64)
+    print("[8] Static-linking host tools for QEMU compatibility...")
+
+    # Patch datatoc
+    datatoc_cmake = os.path.join(blender_dir, 'source', 'blender', 'datatoc', 'CMakeLists.txt')
+    with open(datatoc_cmake, 'r') as fh:
+        content = fh.read()
+
+    # datatoc (always built)
+    content = content.replace(
+        'add_executable(datatoc ${SRC})',
+        'add_executable(datatoc ${SRC})\n\tset_target_properties(datatoc PROPERTIES LINK_FLAGS "-static")'
+    )
+
+    # datatoc_icon (built when WITH_HEADLESS=OFF)
+    content = content.replace(
+        'add_executable(datatoc_icon ${SRC})',
+        'add_executable(datatoc_icon ${SRC})\n\tset_target_properties(datatoc_icon PROPERTIES LINK_FLAGS "-static")'
+    )
+
+    with open(datatoc_cmake, 'w') as fh:
+        fh.write(content)
+    print("    Patched datatoc/CMakeLists.txt")
+
+    # Patch makesdna
+    makesdna_cmake = os.path.join(blender_dir, 'source', 'blender', 'makesdna', 'intern', 'CMakeLists.txt')
+    with open(makesdna_cmake, 'r') as fh:
+        content = fh.read()
+    content = content.replace(
+        'add_executable(makesdna ${SRC} ${SRC_DNA_INC})',
+        'add_executable(makesdna ${SRC} ${SRC_DNA_INC})\n\tset_target_properties(makesdna PROPERTIES LINK_FLAGS "-static")'
+    )
+    with open(makesdna_cmake, 'w') as fh:
+        fh.write(content)
+    print("    Patched makesdna/intern/CMakeLists.txt")
+
+    # Patch makesrna
+    makesrna_cmake = os.path.join(blender_dir, 'source', 'blender', 'makesrna', 'intern', 'CMakeLists.txt')
+    with open(makesrna_cmake, 'r') as fh:
+        content = fh.read()
+    content = content.replace(
+        'add_executable(makesrna ${SRC} ${SRC_RNA_INC} ${SRC_DNA_INC})',
+        'add_executable(makesrna ${SRC} ${SRC_RNA_INC} ${SRC_DNA_INC})\n\tset_target_properties(makesrna PROPERTIES LINK_FLAGS "-static")'
+    )
+    with open(makesrna_cmake, 'w') as fh:
+        fh.write(content)
+    print("    Patched makesrna/intern/CMakeLists.txt")
+
     print("\n=== All Android patches applied successfully ===")
 
 
