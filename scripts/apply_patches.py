@@ -35,6 +35,16 @@ def main():
         shutil.copy2(src, dst)
         print(f"    Copied {f}")
 
+    # 1.5. Copy platform_android.cmake
+    print("[1.5] Copying platform_android.cmake...")
+    src = os.path.join(patch_dir, 'config', 'platform_android.cmake')
+    dst = os.path.join(blender_dir, 'build_files', 'cmake', 'platform', 'platform_android.cmake')
+    if os.path.exists(src):
+        shutil.copy2(src, dst)
+        print(f"    Copied platform_android.cmake")
+    else:
+        print(f"    WARNING: platform_android.cmake not found at {src}")
+
     # 2. Modify GHOST_ISystem.cpp - add Android system creation
     print("[2] Patching GHOST_ISystem.cpp...")
     ghost_isystem = os.path.join(blender_dir, 'intern', 'ghost', 'intern', 'GHOST_ISystem.cpp')
@@ -157,6 +167,16 @@ endif()'''
 	set(WITH_GHOST_XDND    OFF)
 	set(WITH_INPUT_IME     OFF)
 endif()'''
+    content = content.replace(old, new)
+
+    # Skip platform_unix.cmake for Android (handles deps like JPEG/PNG/Freetype)
+    old = 'if(UNIX AND NOT APPLE)\n\tinclude(platform_unix)'
+    new = '''if(UNIX AND NOT APPLE)
+	if(WITH_ANDROID_MODULE)
+		include(platform_android)
+	else()
+		include(platform_unix)
+	endif()'''
     content = content.replace(old, new)
 
     # Add EGL/GLESv2 linkage for Android (needed by GL4ES)
