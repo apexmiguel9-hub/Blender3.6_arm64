@@ -60,8 +60,11 @@ jobs:
             -DDEFAULT_ES=2 \
             -DNO_INIT_CONSTRUCTOR=ON
           ninja -j$(nproc)
-          cmake --install . --prefix ${{ github.workspace }}/gl4es-install
           echo "=== GL4ES output ==="
+          mkdir -p ${{ github.workspace }}/gl4es-install/lib
+          mkdir -p ${{ github.workspace }}/gl4es-install/include
+          cp ../lib/libGL.a ${{ github.workspace }}/gl4es-install/lib/
+          cp -r ../include/* ${{ github.workspace }}/gl4es-install/include/
           find ${{ github.workspace }}/gl4es-install -type f
 
       - name: Configure Blender for Android
