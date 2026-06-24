@@ -257,62 +257,6 @@ endif()'''
         f.write(content)
     print("    Patched source/creator/creator.c")
 
-    # 6.5. Add host makesdna support for cross-compilation
-    print("[6.5] Patching makesdna/intern/CMakeLists.txt for cross-compilation...")
-    makesdna_cmake = os.path.join(blender_dir, 'source', 'blender', 'makesdna', 'intern', 'CMakeLists.txt')
-    with open(makesdna_cmake, 'r') as fh:
-        content = fh.read()
-    old_makesdna = '''add_executable(makesdna ${SRC} ${SRC_DNA_INC})
-
-# Output dna.c
-add_custom_command(
-	OUTPUT
-		${CMAKE_CURRENT_BINARY_DIR}/dna.c
-		${CMAKE_CURRENT_BINARY_DIR}/dna_type_offsets.h
-	COMMAND
-		"$<TARGET_FILE:makesdna>"
-		${CMAKE_CURRENT_BINARY_DIR}/dna.c
-		${CMAKE_CURRENT_BINARY_DIR}/dna_type_offsets.h
-		${CMAKE_SOURCE_DIR}/source/blender/makesdna/
-	DEPENDS makesdna
-)'''
-    new_makesdna = '''if(CMAKE_CROSSCOMPILING)
-	# When cross-compiling, use a pre-built host makesdna
-	set(MAKESDNA_HOST_EXECUTABLE "" CACHE FILEPATH "Pre-built host makesdna executable")
-	if(NOT MAKESDNA_HOST_EXECUTABLE)
-		message(FATAL_ERROR "Set MAKESDNA_HOST_EXECUTABLE to pre-built host makesdna for cross-compilation")
-	endif()
-	add_executable(makesdna EXCLUDE_FROM_ALL ${SRC} ${SRC_DNA_INC})
-	add_custom_command(
-		OUTPUT
-			${CMAKE_CURRENT_BINARY_DIR}/dna.c
-			${CMAKE_CURRENT_BINARY_DIR}/dna_type_offsets.h
-		COMMAND
-			"${MAKESDNA_HOST_EXECUTABLE}"
-			${CMAKE_CURRENT_BINARY_DIR}/dna.c
-			${CMAKE_CURRENT_BINARY_DIR}/dna_type_offsets.h
-			${CMAKE_SOURCE_DIR}/source/blender/makesdna/
-		DEPENDS ${MAKESDNA_HOST_EXECUTABLE}
-	)
-else()
-	add_executable(makesdna ${SRC} ${SRC_DNA_INC})
-	add_custom_command(
-		OUTPUT
-			${CMAKE_CURRENT_BINARY_DIR}/dna.c
-			${CMAKE_CURRENT_BINARY_DIR}/dna_type_offsets.h
-		COMMAND
-			"$<TARGET_FILE:makesdna>"
-			${CMAKE_CURRENT_BINARY_DIR}/dna.c
-			${CMAKE_CURRENT_BINARY_DIR}/dna_type_offsets.h
-			${CMAKE_SOURCE_DIR}/source/blender/makesdna/
-		DEPENDS makesdna
-	)
-endif()'''
-    content = content.replace(old_makesdna, new_makesdna)
-    with open(makesdna_cmake, 'w') as fh:
-        fh.write(content)
-    print("    Patched makesdna/intern/CMakeLists.txt")
-
     # 7. Fix malloc_stats() not available on Android (bionic libc)
     print("[7] Patching guardedalloc for Android...")
     for f in ['mallocn_lockfree_impl.c', 'mallocn_guarded_impl.c']:

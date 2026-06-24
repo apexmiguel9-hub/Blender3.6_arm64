@@ -39,7 +39,7 @@ jobs:
       - name: Install system deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build pkg-config bison flex gettext gcc
+          sudo apt-get install -y ninja-build pkg-config bison flex gettext gcc qemu-user-static binfmt-support
 
       - name: Build Android dependencies (zlib, jpeg, png)
         run: |
@@ -67,25 +67,6 @@ jobs:
 
           echo "=== Android libraries ==="
           find $PREFIX -type f | sort
-
-      - name: Build host makesdna tool
-        run: |
-          # Build makesdna for HOST (x86_64) so it can run during cross-compilation
-          mkdir -p ${{ github.workspace }}/host-tools
-          cd blender279
-          gcc -o ${{ github.workspace }}/host-tools/makesdna \
-            -I intern/guardedalloc \
-            -I intern/atomic \
-            -I source/blender/blenlib \
-            -I source/blender/makesdna \
-            -DWITH_DNA_GHASH \
-            source/blender/makesdna/intern/makesdna.c \
-            intern/guardedalloc/intern/mallocn.c \
-            intern/guardedalloc/intern/mallocn_guarded_impl.c \
-            intern/guardedalloc/intern/mallocn_lockfree_impl.c \
-            -lm
-          echo "=== Host makesdna ==="
-          file ${{ github.workspace }}/host-tools/makesdna
 
       - name: Apply Android patches to Blender
         run: |
@@ -146,7 +127,6 @@ jobs:
             -DWITH_GHOST_DEBUG=OFF \
             -DWITH_IMAGE_TIFF=OFF \
             -DWITH_IMAGE_OPENEXR=OFF \
-            -DMAKESDNA_HOST_EXECUTABLE=${{ github.workspace }}/host-tools/makesdna \
             -DGL4ES_LIBRARY=${{ github.workspace }}/gl4es-install/lib/libGL.a \
             -DGL4ES_INCLUDE_DIR=${{ github.workspace }}/gl4es-install/include \
             -DCMAKE_C_FLAGS="-fPIC -static-libgcc -Os -DANDROID" \
