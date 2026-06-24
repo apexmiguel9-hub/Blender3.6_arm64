@@ -320,6 +320,23 @@ endif()'''
         fh.write(content)
     print("    Patched makesrna/intern/CMakeLists.txt")
 
+    # 9. Fix Eigen3 Functors.h for NDK r27 (std::binder2nd/1st removed from libc++)
+    print("[9] Patching Eigen3 Functors.h for NDK r27 compatibility...")
+    eigen_functors = os.path.join(blender_dir, 'extern', 'Eigen3', 'Eigen', 'src', 'Core', 'Functors.h')
+    with open(eigen_functors, 'r') as fh:
+        content = fh.read()
+    content = content.replace(
+        'template<typename T>\nstruct functor_traits<std::binder2nd<T> >\n{ enum { Cost = functor_traits<T>::Cost, PacketAccess = false }; };',
+        ''
+    )
+    content = content.replace(
+        'template<typename T>\nstruct functor_traits<std::binder1st<T> >\n{ enum { Cost = functor_traits<T>::Cost, PacketAccess = false }; };',
+        ''
+    )
+    with open(eigen_functors, 'w') as fh:
+        fh.write(content)
+    print("    Patched extern/Eigen3/Eigen/src/Core/Functors.h")
+
     print("\n=== All Android patches applied successfully ===")
 
 
