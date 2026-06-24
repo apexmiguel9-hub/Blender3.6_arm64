@@ -115,6 +115,7 @@ jobs:
             -DWITH_FREESTYLE=OFF \
             -DWITH_OPENCOLORIO=OFF \
             -DWITH_OPENVDB=OFF \
+            -DWITH_AUDASPACE=OFF \
             -DWITH_CODEC_FFMPEG=OFF \
             -DWITH_CODEC_SNDFILE=OFF \
             -DWITH_OPENAL=OFF \
