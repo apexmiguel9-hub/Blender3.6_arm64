@@ -241,7 +241,27 @@ jobs:
                   f.write('\n' + dummy_block)
               print("Added " + str(len(missing_a)) + " dummy .a build rules")
 
-          print('build.ninja scan complete')
+          # Replace ARM64 cross-compiled datatoc rules with CUSTOM_COMMAND
+          # that copies the native x86_64 host binary (avoids QEMU binfmt issues).
+          for name, host_path in (('datatoc', '/tmp/host_tools/datatoc'),
+                                  ('datatoc_icon', '/tmp/host_tools/datatoc_icon')):
+              pat = (r'^build bin/' + re.escape(name) +
+                     r': C_EXECUTABLE_LINKER__' +
+                     re.escape(name) +
+                     r'_Release .*?(?=\n\n|\nbuild |\Z)')
+              rep = ('build bin/' + name + ': CUSTOM_COMMAND\n'
+                     '  COMMAND = cp ' + host_path + ' bin/' + name + '\n'
+                     '  RESTAT = 1\n')
+              m = re.search(pat, t, re.MULTILINE | re.DOTALL)
+              if m:
+                  print("Replaced build rule for bin/" + name)
+                  t = re.sub(pat, rep, t, count=1, flags=re.MULTILINE | re.DOTALL)
+              else:
+                  print("WARNING: no build rule found for bin/" + name)
+
+          with open('build.ninja', 'w') as f:
+              f.write(t)
+          print('build.ninja patched OK')
           PYEOF
 
 
