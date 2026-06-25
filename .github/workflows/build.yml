@@ -216,16 +216,33 @@ jobs:
           for d in sorted(phony_a_deps):
               print("  " + d)
 
-          # Check which .a deps are missing build rules
-          existing_a_rules = set()
-          for bl in build_lines:
-              parts = bl.split(':')
-              outputs = parts[0].replace('build ', '').strip().split()
-              for out in outputs:
-                  if out.endswith('.a'):
-                      existing_a_rules.add(out)
+           # Check which .a deps are missing build rules
+           existing_a_rules = set()
+           for bl in build_lines:
+               parts = bl.split(':')
+               outputs = parts[0].replace('build ', '').strip().split()
+               for out in outputs:
+                   if out.endswith('.a'):
+                       existing_a_rules.add(out)
 
-          missing_a = sorted(phony_a_deps - existing_a_rules)
+           # Find all .a deps from ALL build rules, not just phony targets
+           all_a_deps = set()
+           for l in ninja_content.split('\n'):
+               l = l.strip()
+               if l.startswith('build ') and '.a' in l:
+                   # Extract inputs/deps after the first colon
+                   colon_pos = l.find(':')
+                   if colon_pos > 0:
+                       after_colon = l[colon_pos+1:]
+                       parts = after_colon.split('|')
+                       for part in parts:
+                           deps = part.strip().split()
+                           for dep in deps:
+                               dep = dep.strip()
+                               if dep.endswith('.a'):
+                                   all_a_deps.add(dep)
+
+           missing_a = sorted(all_a_deps - existing_a_rules)
           print("=== MISSING .a BUILD RULES (" + str(len(missing_a)) + ") ===")
           for a in missing_a:
               print("  " + a)
