@@ -180,11 +180,10 @@ jobs:
             INC_FLAGS="$INC_FLAGS -I $PWD/../intern/guardedalloc/intern"
             INC_FLAGS="$INC_FLAGS -I $PWD/${DNA_GEN_DIR}"
             OBJDIR=$(mktemp -d)
-            # C sources (gcc)
+            # C sources (gcc) - makesdna executable does NOT need dna_genfile.c
             for src in \
               "$PWD/../source/blender/makesdna/intern/makesdna.c" \
               "$PWD/../source/blender/makesdna/intern/dna_utils.c" \
-            "$PWD/../source/blender/makesdna/intern/dna_genfile.c" \
               "$PWD/../source/blender/blenlib/intern/BLI_assert.c" \
               "$PWD/../source/blender/blenlib/intern/BLI_ghash.c" \
               "$PWD/../source/blender/blenlib/intern/BLI_ghash_utils.c" \
@@ -217,6 +216,36 @@ jobs:
               "$PWD/../source/blender/makesdna/" 2>&1
             # Verify files were actually created
             ls -la "${DNA_GEN_DIR}/dna.c" "${DNA_GEN_DIR}/dna_type_offsets.h" "${DNA_GEN_DIR}/dna_verify.c"
+            # Compile native libbf_dna.a from generated files (needed by makesrna)
+            echo "=== Compiling native libbf_dna.a from generated files ==="
+            DNA_OBJDIR=$(mktemp -d)
+            for src in \
+              "${DNA_GEN_DIR}/dna.c" \
+              "${DNA_GEN_DIR}/dna_verify.c" \
+              "$PWD/../source/blender/makesdna/intern/dna_genfile.c" \
+              "$PWD/../source/blender/makesdna/intern/dna_utils.c" \
+              "$PWD/../source/blender/makesdna/intern/dna_defaults.c" \
+              "$PWD/../source/blender/blenlib/intern/BLI_assert.c" \
+              "$PWD/../source/blender/blenlib/intern/BLI_ghash.c" \
+              "$PWD/../source/blender/blenlib/intern/BLI_ghash_utils.c" \
+              "$PWD/../source/blender/blenlib/intern/BLI_memarena.c" \
+              "$PWD/../source/blender/blenlib/intern/BLI_mempool.c" \
+              "$PWD/../source/blender/blenlib/intern/hash_mm2a.c" \
+              "$PWD/../source/blender/blenlib/intern/endian_switch.c" \
+              "$PWD/../intern/guardedalloc/intern/mallocn.c" \
+              "$PWD/../intern/guardedalloc/intern/mallocn_guarded_impl.c" \
+              "$PWD/../intern/guardedalloc/intern/mallocn_lockfree_impl.c"; do
+              bn=$(basename "$src" .c)
+              gcc -c $INC_FLAGS -o "$DNA_OBJDIR/${bn}.o" "$src" 2>&1
+            done
+            for src in \
+              "$PWD/../intern/guardedalloc/intern/memory_usage.cc" \
+              "$PWD/../intern/guardedalloc/intern/leak_detector.cc"; do
+              bn=$(basename "$src" .cc)
+              g++ -c $INC_FLAGS -o "$DNA_OBJDIR/${bn}.o" "$src" 2>&1
+            done
+            ar rcs /tmp/host_tools/libbf_dna_native.a "$DNA_OBJDIR"/*.o
+            rm -rf "$DNA_OBJDIR"
           else
             echo "WARNING: generated header dna_includes_as_strings.h not found, cannot build makesdna"
           fi
@@ -304,8 +333,8 @@ jobs:
             echo "  gcc ${bn}.c"
             gcc -w -c $INC_FLAGS -o "$RNA_OBJDIR/${bn}.o" "$src" 2>&1
           done
-          # Link with g++
-          g++ -o /tmp/host_tools/makesrna "$RNA_OBJDIR"/*.o -lm -lpthread 2>&1
+          # Link with g++ (include native libbf_dna.a for DNA symbols)
+          g++ -o /tmp/host_tools/makesrna "$RNA_OBJDIR"/*.o /tmp/host_tools/libbf_dna_native.a -lm -lpthread 2>&1
           rm -rf "$RNA_OBJDIR"
           echo "=== Running makesrna ==="
           mkdir -p "$PWD/source/blender/makesrna"
