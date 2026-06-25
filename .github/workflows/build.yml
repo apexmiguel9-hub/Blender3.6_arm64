@@ -165,8 +165,8 @@ jobs:
           sed -i 's/^#  define USE_RNA_RANGE_CHECK$/#undef USE_RNA_RANGE_CHECK/' ../source/blender/makesrna/intern/rna_internal.h
           # Add forward declaration for rna_lang_enum_properties_get_no_international
           # so generated code can call it (with C linkage since it's defined in a C file)
-          # Insert after the #endif that closes the extern "C" block opening
-          sed -i '/^#ifdef __cplusplus/,/^#endif$/ { /^#endif$/a int rna_lang_enum_properties_get_no_international(PointerRNA *ptr); }' ../source/blender/makesrna/intern/rna_internal.h
+          # Insert after the first #endif (after extern "C" block opening)
+          sed -i '0,/^#endif$/s//&\nint rna_lang_enum_properties_get_no_international(PointerRNA *ptr);/' ../source/blender/makesrna/intern/rna_internal.h
           # Patch rna_userdef.c to remove 'static' from rna_lang_enum_properties_get_no_international
           # so the generated rna_userdef_gen.c can call it
           sed -i 's/^static int rna_lang_enum_properties_get_no_international(/int rna_lang_enum_properties_get_no_international(/' ../source/blender/makesrna/intern/rna_userdef.c
