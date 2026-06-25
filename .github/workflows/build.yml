@@ -249,20 +249,82 @@ jobs:
           # Patch build.ninja
           python3 /dev/stdin << 'PYEOF'
           import re, sys, os
-          try:
-              with open('build.ninja') as f:
-                  t = f.read()
-          except FileNotFoundError:
+
+          def read_file(path):
+              try:
+                  with open(path) as f:
+                      return f.read()
+              except FileNotFoundError:
+                  return None
+
+          t = read_file('build.ninja')
+          if t is None:
               print("FATAL: build.ninja not found in", os.getcwd())
               sys.exit(1)
 
-          # Debug: check for clog rule before patching
-          has_clog_rule = 'build lib/libbf_intern_clog.a:' in t
-          print("clog BUILD RULE " + ("FOUND" if has_clog_rule else "MISSING") + " before patching")
-          if not has_clog_rule:
-              # Also check if it exists as a dependency only (via phony target)
-              if 'lib/libbf_intern_clog.a' in t:
-                  print("(note: libbf_intern_clog.a appears only as a dependency, not as a build rule)")
+          # Also read included ninja files (cmake >=3.30 may split rules)
+          ninja_content = t
+          for m in re.finditer(r'^include\s+(\S+)', t, re.MULTILINE):
+              inc = m.group(1)
+              inc_txt = read_file(inc)
+              if inc_txt is not None:
+                  print("Included ninja file: " + inc + " (" + str(len(inc_txt)) + " bytes)")
+                  ninja_content += '\n' + inc_txt
+              else:
+                  print("WARNING: included ninja file not found: " + inc)
+
+          # Diagnostic: list all .a build rules
+          build_lines = [l for l in ninja_content.split('\n') if l.startswith('build ') and '.a:' in l]
+          print("=== ALL .a BUILD RULES (" + str(len(build_lines)) + ") ===")
+          for bl in build_lines:
+              print("  " + bl.strip())
+
+          # Diagnostic: list all .o build rules
+          o_rules = [l for l in ninja_content.split('\n') if l.startswith('build ') and '.o:' in l]
+          print("=== ALL .o BUILD RULES (" + str(len(o_rules)) + ") ===")
+          for ol in o_rules[:10]:
+              print("  " + ol.strip())
+          if len(o_rules) > 10:
+              print("  ... (" + str(len(o_rules) - 10) + " more)")
+
+          # Diagnostic: list phony targets that depend on .a files
+          phony_a_deps = set()
+          for l in ninja_content.split('\n'):
+              l = l.strip()
+              if l.startswith('build ') and ': phony' in l:
+                  deps = l.split(':')[1].replace('phony', '').strip()
+                  for dep in deps.split():
+                      dep = dep.strip()
+                      if dep.endswith('.a') and dep not in phony_a_deps:
+                          phony_a_deps.add(dep)
+          print("=== PHONY TARGETS DEPENDING ON .a FILES (" + str(len(phony_a_deps)) + ") ===")
+          for d in sorted(phony_a_deps):
+              print("  " + d)
+
+          # Check which .a deps are missing build rules
+          existing_a_rules = set()
+          for bl in build_lines:
+              parts = bl.split(':')
+              outputs = parts[0].replace('build ', '').strip().split()
+              for out in outputs:
+                  if out.endswith('.a'):
+                      existing_a_rules.add(out)
+
+          missing_a = sorted(phony_a_deps - existing_a_rules)
+          print("=== MISSING .a BUILD RULES (" + str(len(missing_a)) + ") ===")
+          for a in missing_a:
+              print("  " + a)
+
+          # Add dummy rules for ALL missing .a files
+          dummy_block = ""
+          for a in missing_a:
+              dummy_block += ('build ' + a + ': CUSTOM_COMMAND\n'
+                              '  COMMAND = ar crs ' + a + '\n'
+                              '  RESTAT = 1\n\n')
+          if dummy_block:
+              with open('build.ninja', 'a') as f:
+                  f.write('\n' + dummy_block)
+              print("Added " + str(len(missing_a)) + " dummy .a build rules")
 
           # Binary build rules: datatoc gets cp'd from native build, datatoc_icon is no-op
           for name, path in (('datatoc', '/tmp/host_tools/datatoc'),
@@ -305,18 +367,6 @@ jobs:
           with open('build.ninja', 'w') as f:
               f.write(t)
           print('build.ninja patched OK')
-
-          # Debug: check for clog rule after patching
-          has_clog_rule = 'build lib/libbf_intern_clog.a:' in t
-          print("clog BUILD RULE " + ("PRESENT" if has_clog_rule else "MISSING") + " after patching")
-          if not has_clog_rule:
-              print("Adding dummy build rule for lib/libbf_intern_clog.a")
-              dummy = ('build lib/libbf_intern_clog.a: CUSTOM_COMMAND\n'
-                       '  COMMAND = ar crs lib/libbf_intern_clog.a\n'
-                       '  RESTAT = 1\n')
-              with open('build.ninja', 'a') as f:
-                  f.write('\n' + dummy)
-              print("dummy clog rule added")
           PYEOF
 
 
@@ -326,19 +376,24 @@ jobs:
         run: |
           set -x
           cd blender36/build
-          echo "=== NINJA STATS ==="
-          ninja -n 2>&1 | head -20 || echo "[ninja dry-run failed]"
-          ninja -t targets all 2>&1 | head -20 || echo "[ninja targets failed]"
-          echo "=== EDGE COUNT ==="
-          grep -cP '^build ' build.ninja || echo "0"
-          echo "=== FULL BUILD ==="
-          ninja -j$(nproc) 2>&1 | tee build.log; rc=$?
-          echo "=== NINJA EXIT CODE: $rc ==="
-          echo "=== FAILURES ==="
-          grep -i "FAILED\|error:\|build stopped" build.log 2>/dev/null || echo "(none found)"
-          if [ "$rc" -ne 0 ]; then
+          {
+            echo "=== NINJA DRY RUN ==="
+            ninja -n 2>&1 | head -50 || echo "[ninja dry-run failed]"
+            echo "=== TARGETS ==="
+            ninja -t targets all 2>&1 | head -50 || echo "[ninja targets failed]"
+            echo "=== EDGE COUNT ==="
+            grep -cP '^build ' build.ninja || echo "0"
+            grep -P '^include ' build.ninja 2>/dev/null || echo "(no includes)"
+            echo "=== .a BUILD RULES ==="
+            grep -P '^build\s+\S*\.a:' build.ninja 2>/dev/null || echo "(no .a rules in main file)"
+            echo "=== FULL BUILD ==="
+            ninja -j$(nproc) 2>&1; echo "==NINJA_EXIT=$?=="
+            echo "=== FAILURES ==="
+          } 2>&1 | tee build.log
+          rc="$(grep '==NINJA_EXIT=' build.log | tail -1 | sed 's/.*==NINJA_EXIT=//;s/==.*//' || echo '1')"
+          echo "Ninja exit code: $rc"
+          if [ "${rc:-1}" -ne 0 ]; then
             echo "BUILD FAILED - ninja exit code $rc"
-            tail -100 build.log
             exit 1
           fi
           echo "BUILD COMPLETED SUCCESSFULLY"
@@ -360,9 +415,11 @@ jobs:
           find ${{ github.workspace }}/blender36/build -name "libcycles_*.a" -exec cp {} ${{ github.workspace }}/output/ \; 2>/dev/null || true
           # Copy the final .so if built
           cp ${{ github.workspace }}/blender36/build/lib/libblender.so ${{ github.workspace }}/output/ 2>/dev/null || echo "(no libblender.so)"
-          # Copy logs
+          # Copy logs and build files for diagnostics
           cp ${{ github.workspace }}/blender36/build/cmake_config.log ${{ github.workspace }}/output/ 2>/dev/null || echo "(no cmake_config.log)"
           cp ${{ github.workspace }}/blender36/build/build.log ${{ github.workspace }}/output/ 2>/dev/null || echo "(no build.log)"
+          cp ${{ github.workspace }}/blender36/build/build.ninja ${{ github.workspace }}/output/build.ninja 2>/dev/null || echo "(no build.ninja)"
+          cp ${{ github.workspace }}/blender36/build/CMakeFiles/rules.ninja ${{ github.workspace }}/output/rules.ninja 2>/dev/null || echo "(no rules.ninja)"
           echo "=== Output files ==="
           ls -la ${{ github.workspace }}/output/
 
