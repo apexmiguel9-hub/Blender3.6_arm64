@@ -240,19 +240,26 @@ jobs:
                      '  RESTAT = 1\n')
               replace_rule(pat, rep)
 
-          # Icon sprite rules: no-op (files pre-generated)
+          # Icon sprite rules: no-op (files pre-generated).
+          # Must handle possible ninja line continuations ($) between outputs.
+          build_dir = os.getcwd()
           for icon in ('blender_icons16', 'blender_icons32'):
-              pat = (r'^build release/datafiles/' + re.escape(icon) +
-                     r'\.png release/datafiles/' + re.escape(icon) +
+              pat = (r'^build\s+(.*\$\s*\n)*.*release/datafiles/' +
+                     re.escape(icon) +
+                     r'\.png(.*\$\s*\n)*.*release/datafiles/' +
+                     re.escape(icon) +
                      r'\.png\.c:.*?^(?=\S|\Z)')
+              m = re.search(pat, t, re.MULTILINE | re.DOTALL)
+              if m:
+                  print("Matched icon rule for " + icon)
+              else:
+                  print("NO MATCH for icon rule: " + icon)
+              comm = ':  # no-op, files pre-generated'
               rep = ('build release/datafiles/' + icon + '.png release/datafiles/' +
                      icon + '.png.c: CUSTOM_COMMAND\n'
-                     '  COMMAND = cp release/datafiles/' + icon + '.png ' +
-                     'release/datafiles/' + icon + '.png && '
-                     'cp release/datafiles/' + icon + '.png.c ' +
-                     'release/datafiles/' + icon + '.png.c\n'
+                     '  COMMAND = ' + comm + '\n'
                      '  RESTAT = 1\n')
-              replace_rule(pat, rep)
+              t = re.sub(pat, rep, t, count=1, flags=re.MULTILINE | re.DOTALL)
 
           with open('build.ninja', 'w') as f:
               f.write(t)
