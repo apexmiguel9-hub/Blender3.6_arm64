@@ -161,6 +161,50 @@ jobs:
 
           cd blender36/build
 
+          # Build makesdna natively (x86_64) and generate dna.c / dna_type_offsets.h
+          # The android fork comments out the makesdna executable and custom_command
+          # in CMakeLists.txt, so these files are never produced during cmake.
+          # Without them, compilation of dna.c.o fails at step ~3085.
+          mkdir -p /tmp/host_tools
+          DNA_GEN_DIR="source/blender/makesdna/intern"
+          if [ -f "${DNA_GEN_DIR}/dna_includes_as_strings.h" ]; then
+            echo "=== Compiling makesdna natively ==="
+            g++ -DNDEBUG -DWITH_DNA_GHASH \
+              -o /tmp/host_tools/makesdna \
+              -I "$PWD/../source/blender/makesdna" \
+              -I "$PWD/../source/blender/makesdna/intern" \
+              -I "$PWD/../source/blender/blenlib" \
+              -I "$PWD/../source/blender/imbuf" \
+              -I "$PWD/../intern/atomic" \
+              -I "$PWD/../intern/guardedalloc" \
+              -I "$PWD/../intern/guardedalloc/intern" \
+              -I "$PWD/${DNA_GEN_DIR}" \
+              "$PWD/../source/blender/makesdna/intern/makesdna.c" \
+              "$PWD/../source/blender/makesdna/intern/dna_utils.c" \
+              "$PWD/../source/blender/blenlib/intern/BLI_assert.c" \
+              "$PWD/../source/blender/blenlib/intern/BLI_ghash.c" \
+              "$PWD/../source/blender/blenlib/intern/BLI_ghash_utils.c" \
+              "$PWD/../source/blender/blenlib/intern/BLI_memarena.c" \
+              "$PWD/../source/blender/blenlib/intern/BLI_mempool.c" \
+              "$PWD/../source/blender/blenlib/intern/hash_mm2a.c" \
+              "$PWD/../intern/guardedalloc/intern/mallocn.c" \
+              "$PWD/../intern/guardedalloc/intern/mallocn_guarded_impl.c" \
+              "$PWD/../intern/guardedalloc/intern/mallocn_lockfree_impl.c" \
+              "$PWD/../intern/guardedalloc/intern/memory_usage.cc" \
+              "$PWD/../intern/guardedalloc/intern/leak_detector.cc" \
+              -lm -lpthread 2>&1
+            echo "=== Running makesdna to generate dna.c ==="
+            /tmp/host_tools/makesdna \
+              "${DNA_GEN_DIR}/dna.c" \
+              "${DNA_GEN_DIR}/dna_type_offsets.h" \
+              "${DNA_GEN_DIR}/dna_verify.c" \
+              "$PWD/../source/blender/makesdna/" 2>&1
+            # Verify files were actually created
+            ls -la "${DNA_GEN_DIR}/dna.c" "${DNA_GEN_DIR}/dna_type_offsets.h" "${DNA_GEN_DIR}/dna_verify.c"
+          else
+            echo "WARNING: generated header dna_includes_as_strings.h not found, cannot build makesdna"
+          fi
+
           # Scan build.ninja for diagnostics and add dummy rules for missing .a targets
           python3 /dev/stdin << 'PYEOF'
           import re, sys, os
