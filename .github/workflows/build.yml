@@ -161,25 +161,98 @@ jobs:
           cp /tmp/host_tools/datatoc blender36/build/bin/datatoc
           cp /tmp/host_tools/datatoc_icon blender36/build/bin/datatoc_icon
           cd blender36/build
+
+          # Pre-generate icon sprite PNGs using Python (Pillow).
+          # Native datatoc_icon segfaults on these .dat files, so we
+          # sidestep it entirely.
+          pip install Pillow 2>/dev/null || sudo apt-get install -y python3-pil 2>/dev/null || true
+          python3 << 'PYEOF'
+          import os, struct, sys
+          try:
+              from PIL import Image
+          except ImportError:
+              print("Pillow not available, icon generation skipped")
+              sys.exit(0)
+
+          def gen_icons(set_name):
+              src_dir = "../release/datafiles/" + set_name
+              dst_png = "release/datafiles/" + set_name + ".png"
+              if not os.path.isdir(src_dir):
+                  return
+              os.makedirs("release/datafiles", exist_ok=True)
+              cw = ch = 0
+              canvas = None
+              for fname in sorted(os.listdir(src_dir)):
+                  if not fname.endswith('.dat'):
+                      continue
+                  with open(os.path.join(src_dir, fname), 'rb') as f:
+                      data = f.read()
+                  if len(data) < 24:
+                      continue
+                  iw, ih, ox, oy, cwn, chn = struct.unpack_from('<IIIIII', data, 0)
+                  px = data[24:]
+                  if len(px) < iw * ih * 4:
+                      continue
+                  if canvas is None:
+                      cw, ch = cwn, chn
+                      canvas = bytearray(cw * ch * 4)
+                  for y in range(ih):
+                      for x in range(iw):
+                          si = (y * iw + x) * 4
+                          dx = ox + x; dy = oy + y
+                          if dx < cw and dy < ch:
+                              di = (dy * cw + dx) * 4
+                              canvas[di:di+4] = px[si:si+4]
+              if canvas:
+                  Image.frombytes('RGBA', (cw, ch), bytes(canvas)).save(dst_png)
+                  print(set_name + ": " + str(cw) + "x" + str(ch))
+
+          gen_icons('blender_icons16')
+          gen_icons('blender_icons32')
+          PYEOF
+
+          # Convert pre-generated PNGs to C source using working datatoc
+          for icon in blender_icons16 blender_icons32; do
+            if [ -f "release/datafiles/${icon}.png" ]; then
+              ./bin/datatoc "release/datafiles/${icon}.png" \
+                           "release/datafiles/${icon}.png.c"
+              echo "${icon}.png.c generated"
+            fi
+          done
+
+          # Patch build.ninja: replace native binary build rules with cp
+          # and replace icon sprite rules with no-op cp (files pre-generated).
           cat > /tmp/patch_ninja.py << 'PYEOF'
           import re
           with open('build.ninja') as f:
               t = f.read()
 
-          def replace_build_rule(name, bin_path):
+          def replace_rule(pattern, replacement, count=1):
               global t
-              pattern = r'^build bin/' + re.escape(name) + r': .*?^(?=\S|\Z)'
-              # Use full output path instead of $out (ninja doesn't expand it)
-              replacement = (
-                  'build bin/' + name + ': CUSTOM_COMMAND\n'
-                  '  COMMAND = cp ' + bin_path + ' bin/' + name + '\n'
-                  '  DESC = Copy native ' + name + '\n'
-                  '  RESTAT = 1\n'
-              )
-              t = re.sub(pattern, replacement, t, count=1, flags=re.MULTILINE | re.DOTALL)
+              t = re.sub(pattern, replacement, t, count=count, flags=re.MULTILINE | re.DOTALL)
 
-          replace_build_rule('datatoc', '/tmp/host_tools/datatoc')
-          replace_build_rule('datatoc_icon', '/tmp/host_tools/datatoc_icon')
+          # Binary build rules: copy native binaries instead of linking
+          for name, path in (('datatoc', '/tmp/host_tools/datatoc'),
+                             ('datatoc_icon', '/tmp/host_tools/datatoc_icon')):
+              pat = r'^build bin/' + re.escape(name) + r': .*?^(?=\S|\Z)'
+              rep = ('build bin/' + name + ': CUSTOM_COMMAND\n'
+                     '  COMMAND = cp ' + path + ' bin/' + name + '\n'
+                     '  RESTAT = 1\n')
+              replace_rule(pat, rep)
+
+          # Icon sprite rules: no-op (files pre-generated)
+          for icon in ('blender_icons16', 'blender_icons32'):
+              pat = (r'^build release/datafiles/' + re.escape(icon) +
+                     r'\.png release/datafiles/' + re.escape(icon) +
+                     r'\.png\.c:.*?^(?=\S|\Z)')
+              rep = ('build release/datafiles/' + icon + '.png release/datafiles/' +
+                     icon + '.png.c: CUSTOM_COMMAND\n'
+                     '  COMMAND = cp release/datafiles/' + icon + '.png ' +
+                     'release/datafiles/' + icon + '.png && '
+                     'cp release/datafiles/' + icon + '.png.c ' +
+                     'release/datafiles/' + icon + '.png.c\n'
+                     '  RESTAT = 1\n')
+              replace_rule(pat, rep)
 
           with open('build.ninja', 'w') as f:
               f.write(t)
