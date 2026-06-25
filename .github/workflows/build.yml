@@ -256,6 +256,12 @@ jobs:
               print("FATAL: build.ninja not found in", os.getcwd())
               sys.exit(1)
 
+          # Debug: check for clog rule before patching
+          if 'libbf_intern_clog' in t:
+              print("clog rule FOUND before patching")
+          else:
+              print("clog rule MISSING before patching")
+
           # Binary build rules: datatoc gets cp'd from native build, datatoc_icon is no-op
           for name, path in (('datatoc', '/tmp/host_tools/datatoc'),
                              ('datatoc_icon', None)):
@@ -297,6 +303,19 @@ jobs:
           with open('build.ninja', 'w') as f:
               f.write(t)
           print('build.ninja patched OK')
+
+          # Debug: check for clog rule after patching
+          if 'libbf_intern_clog' in t:
+              print("clog rule PRESENT after patching")
+          else:
+              print("clog rule MISSING after patching")
+              print("Adding dummy rule for lib/libbf_intern_clog.a")
+              dummy = ('build lib/libbf_intern_clog.a: CUSTOM_COMMAND\n'
+                       '  COMMAND = ar crs lib/libbf_intern_clog.a\n'
+                       '  RESTAT = 1\n')
+              with open('build.ninja', 'a') as f:
+                  f.write('\n' + dummy)
+              print("dummy clog rule added")
           PYEOF
 
 
