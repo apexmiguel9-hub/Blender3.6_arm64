@@ -332,10 +332,23 @@ jobs:
               else:
                   print("NO MATCH for icon rule: " + icon)
 
-          with open('build.ninja', 'w') as f:
-              f.write(t)
-          print('build.ninja patched OK')
-          PYEOF
+           # Safety net: ensure all CXX FLAGS include -Wno-enum-constexpr-conversion
+           # (cmake -DCMAKE_CXX_FLAGS may not propagate to all build rules)
+           counter = [0]
+           def add_flag(m):
+               g = m.group()
+               if '-Wno-enum-constexpr-conversion' not in g:
+                   counter[0] += 1
+                   return g.rstrip() + ' -Wno-enum-constexpr-conversion\n'
+               return g
+           t = re.sub(r'^FLAGS = .*$', add_flag, t, flags=re.MULTILINE)
+           t = re.sub(r'(?m)^  FLAGS = .*$', add_flag, t)
+           print(f"Patching build.ninja FLAGS: added -Wno-enum-constexpr-conversion to {counter[0]} rule(s)")
+
+           with open('build.ninja', 'w') as f:
+               f.write(t)
+           print('build.ninja patched OK')
+           PYEOF
 
 
 
