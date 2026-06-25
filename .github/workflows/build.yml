@@ -243,6 +243,27 @@ jobs:
                                   all_a_deps.add(dep)
 
           missing_a = sorted(all_a_deps - existing_a_rules)
+
+          # Also detect self-referencing phony .a targets (cmake generates these
+          # for libraries with no source files, e.g. bf_intern_clog on Android).
+          for bl in build_lines:
+              l = bl.strip()
+              if ': phony' in l:
+                  parts = l.split(':')
+                  out = parts[0].replace('build ', '').strip()
+                  if out.endswith('.a'):
+                      raw_deps = parts[1].replace('phony', '').strip()
+                      dep_list = raw_deps.split()
+                      for dep in dep_list:
+                          # If a phony target's dep has the right basename but wrong prefix,
+                          # it's likely a self-ref that needs a dummy rule.
+                          dep_plain = dep.split('/')[-1]
+                          out_plain = out.split('/')[-1]
+                          if dep_plain == out_plain and dep not in existing_a_rules and dep not in missing_a:
+                              missing_a.append(dep)
+                              print("  SELF-REF phony .a: " + out + " -> " + dep)
+          missing_a = sorted(missing_a)
+
           print("=== MISSING .a BUILD RULES (" + str(len(missing_a)) + ") ===")
           for a in missing_a:
               print("  " + a)
