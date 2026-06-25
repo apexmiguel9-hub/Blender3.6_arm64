@@ -286,8 +286,8 @@ jobs:
           echo "=== BUILD LOG (last 100 lines) ==="
           tail -100 build.log
           echo "=== FAILURES ==="
-          grep -i "FAILED\|error:" build.log || echo "(none found)"
-          if grep -q "^ninja: build stopped" build.log; then
+          grep -i "FAILED\|error:\|build stopped" build.log || echo "(none found)"
+          if grep -q "FAILED\|error:\|build stopped" build.log; then
             echo "BUILD FAILED - see log above"
             exit 1
           fi
