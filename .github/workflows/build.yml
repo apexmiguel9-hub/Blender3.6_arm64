@@ -225,6 +225,7 @@ jobs:
           INC_FLAGS="-DNDEBUG -D_LIBCPP_ENABLE_CXX17_REMOVED_FEATURES"
           INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/makesrna"
           INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/makesdna"
+          INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/makesdna/intern"
           INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/blenlib"
           INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/blenlib/intern"
           INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/blenkernel"
