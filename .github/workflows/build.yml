@@ -230,7 +230,7 @@ jobs:
           for a in missing_a:
               print("  " + a)
 
-          # Add dummy rules for ALL missing .a files
+          # Add dummy rules for missing .a (fallback safety net, rarely triggers).
           dummy_block = ""
           for a in missing_a:
               dummy_block += ('build ' + a + ': CUSTOM_COMMAND\n'
