@@ -236,6 +236,7 @@ jobs:
           INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/windowmanager"
           INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/blenloader"
           INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/editors/include"
+          INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/blentranslation"
           INC_FLAGS="$INC_FLAGS -I $PWD/../intern/atomic"
           INC_FLAGS="$INC_FLAGS -I $PWD/../intern/guardedalloc"
           INC_FLAGS="$INC_FLAGS -I $PWD/../intern/guardedalloc/intern"
