@@ -218,61 +218,77 @@ jobs:
             echo "WARNING: generated header dna_includes_as_strings.h not found, cannot build makesdna"
           fi
 
-          # Generate stub rna_*_gen.c files (makesrna also has its executable
-          # and custom_command commented out in the Android fork's cmake).
-          python3 /dev/stdin << 'PYEOF2'
-          import os, re
-
-          build_ninja = 'build.ninja'
-          if not os.path.exists(build_ninja):
-              print("FATAL: build.ninja not found")
-              exit(1)
-
-          with open(build_ninja) as f:
-              content = f.read()
-
-          # Find all CUSTOM_COMMAND rules for rna_*_gen.c files
-          rna_gen_files = []
-          for m in re.finditer(
-              r"^build\s+([^\s]+rna_([a-zA-Z0-9_-]+)_gen\.c)\s*:\s*CUSTOM_COMMAND.*",
-              content, re.MULTILINE):
-              path = m.group(1)
-              name = m.group(2)  # e.g. ID, action, animation
-              rna_gen_files.append((path, name))
-
-          # Also find rna_prototypes_gen.h
-          for m in re.finditer(
-              r"^build\s+([^\s]+rna_prototypes_gen\.h)\s*:\s*CUSTOM_COMMAND.*",
-              content, re.MULTILINE):
-              rna_gen_files.append((m.group(1), "prototypes_gen"))
-
-          print(f"Found {len(rna_gen_files)} generated RNA files needing stubs")
-
-          # RNA function names that differ from the gen-file-name pattern
-          override_func = {
-              "collection": "RNA_def_collections",
-              "dynamicpaint": "RNA_def_dynamic_paint",
-              "gpencil_legacy": "RNA_def_gpencil",
-              "layer": "RNA_def_view_layer",
-              "gpencil_legacy_modifier": "RNA_def_greasepencil_modifier",
-              "curveprofile": "RNA_def_profile",
-              "timeline": "RNA_def_timeline_marker",
-          }
-
-          for path, name in rna_gen_files:
-              os.makedirs(os.path.dirname(path), exist_ok=True)
-              if name == "prototypes_gen":
-                  with open(path, 'w') as f:
-                      f.write('/* stub */\n')
-              else:
-                  func = override_func.get(name, f"RNA_def_{name}")
-                  with open(path, 'w') as f:
-                      f.write('#include "RNA_define.h"\n')
-                      f.write('#include "rna_internal.h"\n')
-                      f.write(f'void {func}(struct BlenderRNA *brna) {{}}\n')
-              print(f"  Created stub: {os.path.basename(path)}")
-
-          PYEOF2
+          # Build makesrna natively and run it to generate rna_*_gen.c, 
+          # RNA_blender.h, RNA_blender_cpp.h, RNA_prototypes.h, etc.
+          echo "=== Compiling makesrna natively (gcc) ==="
+          RNA_INTERN="$PWD/../source/blender/makesrna/intern"
+          INC_FLAGS="-DNDEBUG -D_LIBCPP_ENABLE_CXX17_REMOVED_FEATURES"
+          INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/makesrna"
+          INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/makesdna"
+          INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/blenlib"
+          INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/blenlib/intern"
+          INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/imbuf"
+          INC_FLAGS="$INC_FLAGS -I $PWD/../intern/atomic"
+          INC_FLAGS="$INC_FLAGS -I $PWD/../intern/guardedalloc"
+          INC_FLAGS="$INC_FLAGS -I $PWD/../intern/guardedalloc/intern"
+          INC_FLAGS="$INC_FLAGS -I $PWD/../intern/clog"
+          INC_FLAGS="$INC_FLAGS -I $PWD/../release/datafiles/userdef"
+          RNA_OBJDIR=$(mktemp -d)
+          # Compile support libraries (gcc)
+          SUPPORT_SRCS=(
+            "$PWD/../source/blender/blenlib/intern/BLI_assert.c"
+            "$PWD/../source/blender/blenlib/intern/BLI_ghash.c"
+            "$PWD/../source/blender/blenlib/intern/BLI_ghash_utils.c"
+            "$PWD/../source/blender/blenlib/intern/BLI_memarena.c"
+            "$PWD/../source/blender/blenlib/intern/BLI_mempool.c"
+            "$PWD/../source/blender/blenlib/intern/hash_mm2a.c"
+            "$PWD/../intern/guardedalloc/intern/mallocn.c"
+            "$PWD/../intern/guardedalloc/intern/mallocn_guarded_impl.c"
+            "$PWD/../intern/guardedalloc/intern/mallocn_lockfree_impl.c"
+            "$PWD/../intern/clog/clog.c"
+            "$PWD/../release/datafiles/userdef/userdef_default.c"
+            "$PWD/../release/datafiles/userdef/userdef_default_theme.c"
+          )
+          for src in "${SUPPORT_SRCS[@]}"; do
+            bn=$(basename "$src" .c)
+            echo "  gcc ${bn}.c"
+            gcc -w -c $INC_FLAGS -o "$RNA_OBJDIR/${bn}.o" "$src" 2>&1
+          done
+          # Compile support C++ (g++)
+          for src in \
+            "$PWD/../intern/guardedalloc/intern/memory_usage.cc" \
+            "$PWD/../intern/guardedalloc/intern/leak_detector.cc"; do
+            bn=$(basename "$src" .cc)
+            echo "  g++ ${bn}.cc"
+            g++ -w -c $INC_FLAGS -o "$RNA_OBJDIR/${bn}.o" "$src" 2>&1
+          done
+          # Compile makesrna main + rna_define.c
+          echo "  gcc makesrna.c"
+          gcc -w -c $INC_FLAGS -o "$RNA_OBJDIR/makesrna.o" "$RNA_INTERN/makesrna.c" 2>&1
+          echo "  gcc rna_define.c"
+          gcc -w -c $INC_FLAGS -o "$RNA_OBJDIR/rna_define.o" "$RNA_INTERN/rna_define.c" 2>&1
+          # Compile all rna_*.c definition files needed by makesrna
+          RNA_DEFS=$(find "$RNA_INTERN" -maxdepth 1 -name 'rna_*.c' ! -name 'rna_*_api.c' ! -name 'rna_define.c' ! -name 'rna_access*')
+          RNA_DEF_COUNT=0
+          for src in $RNA_DEFS; do
+            bn=$(basename "$src" .c)
+            echo "  gcc ${bn}.c"
+            gcc -w -c $INC_FLAGS -o "$RNA_OBJDIR/${bn}.o" "$src" 2>&1
+            RNA_DEF_COUNT=$((RNA_DEF_COUNT + 1))
+          done
+          echo "Compiled $RNA_DEF_COUNT RNA def files"
+          # Link with g++
+          g++ -o /tmp/host_tools/makesrna "$RNA_OBJDIR"/*.o -lm -lpthread 2>&1
+          rm -rf "$RNA_OBJDIR"
+          echo "=== Running makesrna ==="
+          mkdir -p "$PWD/source/blender/makesrna"
+          mkdir -p "$PWD/source/blender/makesrna/intern"
+          /tmp/host_tools/makesrna \
+            "$PWD/source/blender/makesrna/intern/" \
+            "$PWD/source/blender/makesrna/" 2>&1
+          echo "=== Generated files ==="
+          ls -la "$PWD/source/blender/makesrna/"RNA_*.h 2>/dev/null
+          ls "$PWD/source/blender/makesrna/intern/"*_gen.c 2>/dev/null | wc -l
 
           # Scan build.ninja for diagnostics and add dummy rules for missing .a targets
           python3 /dev/stdin << 'PYEOF'
