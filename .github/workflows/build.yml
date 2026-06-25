@@ -162,8 +162,8 @@ jobs:
           cd blender36/build
 
           # Patch rna_internal.h to disable USE_RNA_RANGE_CHECK (causes static assertion failures)
-          sed -i '/#define USE_RNA_RANGE_CHECK 1/s/^/#undef USE_RNA_RANGE_CHECK\n/' ../source/blender/makesrna/rna_internal.h
-          sed -i 's/^#define USE_RNA_RANGE_CHECK 1/#undef USE_RNA_RANGE_CHECK/' ../source/blender/makesrna/rna_internal.h
+          sed -i 's/^#define USE_RNA_RANGE_CHECK$/#undef USE_RNA_RANGE_CHECK/' ../source/blender/makesrna/intern/rna_internal.h
+          sed -i '/^#define USE_RNA_RANGE_CHECK$/d' ../source/blender/makesrna/intern/rna_internal.h
 
           # Build makesdna natively (x86_64) and generate dna.c / dna_type_offsets.h
           # The android fork comments out the makesdna executable and custom_command
