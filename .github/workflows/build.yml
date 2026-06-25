@@ -161,74 +161,33 @@ jobs:
           ls -la /tmp/host_tools/
           mkdir -p blender36/build/bin
 
-          # Replace datatoc_icon with a Python wrapper that generates
-          # PNGs from .dat files using Pillow, avoiding the segfault.
-          cat > blender36/build/bin/datatoc_icon << 'WREOF'
-          #!/usr/bin/env python3
-          import os, struct, sys
-          try:
-              from PIL import Image
-          except ImportError:
-              # If Pillow isn't available, just copy pre-generated files
-              sys.exit(0)
-          if len(sys.argv) < 3:
-              sys.exit(0)
-          src = sys.argv[1]   # /path/to/blender_icons16  (no extension)
-          dst = sys.argv[2]   # /path/to/blender_icons16.png
-          src_dir = src  # dir containing .dat files
-          if not os.path.isdir(src_dir):
-              sys.exit(0)
-          os.makedirs(os.path.dirname(dst), exist_ok=True)
-          cw = ch = 0
-          canvas = None
-          for fname in sorted(os.listdir(src_dir)):
-              if not fname.endswith('.dat'):
-                  continue
-              with open(os.path.join(src_dir, fname), 'rb') as f:
-                  data = f.read()
-              if len(data) < 24:
-                  continue
-              iw, ih, ox, oy, cwn, chn = struct.unpack_from('<IIIIII', data, 0)
-              px = data[24:]
-              if len(px) < iw * ih * 4:
-                  continue
-              if canvas is None:
-                  cw, ch = cwn, chn
-                  canvas = bytearray(cw * ch * 4)
-              for y in range(ih):
-                  for x in range(iw):
-                      si = (y * iw + x) * 4
-                      dx = ox + x; dy = oy + y
-                      if dx < cw and dy < ch:
-                          di = (dy * cw + dx) * 4
-                          canvas[di:di+4] = px[si:si+4]
-          if canvas:
-              Image.frombytes('RGBA', (cw, ch), bytes(canvas)).save(dst)
-              print(f"datatoc_icon wrapper: generated {dst}")
-          WREOF
-          chmod +x blender36/build/bin/datatoc_icon
-          # Also put a copy where the build.ninja expects it
-          mkdir -p blender36/build/bin
-          cp /tmp/host_tools/datatoc blender36/build/bin/datatoc
-          # Keep a backup of the real datatoc_icon for reference
-          cp /tmp/host_tools/datatoc_icon blender36/build/bin/datatoc_icon.real 2>/dev/null || true
+           # Replace datatoc_icon with a simple shell wrapper that does nothing.
+           # The icon PNGs and .c files are pre-generated in this step below.
+           # The wrapper just needs to exit 0 so the build.ninja pipeline continues
+           # to datatoc, which uses the pre-generated files.
+           echo '#!/bin/sh' > blender36/build/bin/datatoc_icon
+           echo 'exit 0' >> blender36/build/bin/datatoc_icon
+           chmod +x blender36/build/bin/datatoc_icon
+           # Copy the native datatoc binary
+           cp /tmp/host_tools/datatoc blender36/build/bin/datatoc
+           ls -la blender36/build/bin/
 
           cd blender36/build
 
-          # Pre-generate icon sprite PNGs using Python (Pillow).
-          # Native datatoc_icon segfaults on these .dat files, so we
-          # sidestep it entirely.
-          python3 -c "from PIL import Image; print('Pillow OK')" \
-            2>/dev/null || pip install Pillow 2>/dev/null || \
-            sudo apt-get install -y python3-pil 2>/dev/null || \
-            echo "WARN: Pillow not available, icons will be skipped"
+           # Pre-generate icon sprite PNGs using Python + Pillow.
+           # Native datatoc_icon segfaults on these .dat files, so we
+           # sidestep it entirely.
+           # Ensure Pillow is available
+           python3 -c "from PIL import Image" 2>/dev/null ||
+             (sudo apt-get install -y python3-pil 2>&1 || pip install Pillow 2>&1) || true
+           python3 /dev/stdin << 'PYEOF'
           python3 /dev/stdin << 'PYEOF'
-          import os, struct, sys
-          try:
-              from PIL import Image
-          except ImportError:
-              print("Pillow not available, icon generation skipped")
-              sys.exit(0)
+           import os, struct, sys, zlib
+           try:
+               from PIL import Image
+               HAVE_PIL = True
+           except ImportError:
+               HAVE_PIL = False
 
           def gen_icons(set_name):
               src_dir = "../release/datafiles/" + set_name
@@ -260,9 +219,25 @@ jobs:
                           if dx < cw and dy < ch:
                               di = (dy * cw + dx) * 4
                               canvas[di:di+4] = px[si:si+4]
-              if canvas:
-                  Image.frombytes('RGBA', (cw, ch), bytes(canvas)).save(dst_png)
-                  print(set_name + ": " + str(cw) + "x" + str(ch) + " -> " + dst_png)
+           if canvas:
+               if HAVE_PIL:
+                   Image.frombytes('RGBA', (cw, ch), bytes(canvas)).save(dst_png)
+               else:
+                   # Minimal PNG writer using only stdlib
+                   def write_png(data, w, h, path):
+                       def chunk(ctype, cdata):
+                           c = ctype + cdata
+                           return struct.pack('>I', len(cdata)) + c + struct.pack('>I', zlib.crc32(c) & 0xffffffff)
+                       with open(path, 'wb') as f:
+                           f.write(b'\x89PNG\r\n\x1a\n')
+                           f.write(chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 6, 0, 0, 0)))
+                           raw = b''
+                           for y in range(h):
+                               raw += b'\x00' + data[y*w*4:(y+1)*w*4]
+                           f.write(chunk(b'IDAT', zlib.compress(raw)))
+                           f.write(chunk(b'IEND', b''))
+                   write_png(bytes(canvas), cw, ch, dst_png)
+               print(set_name + ": " + str(cw) + "x" + str(ch) + " -> " + dst_png)
               else:
                   print("WARN: " + set_name + ": no icons generated")
 
