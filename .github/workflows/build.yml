@@ -44,9 +44,9 @@ jobs:
       - name: Patch hardcoded library paths in cmake modules
         run: |
           LIBDIR=${{ github.workspace }}/lib-android_arm64
-          # Replace Windows hardcoded paths in all cmake files
-          find blender36/build_files -name "*.cmake" -exec sed -i "s|D:/FreeProjects/Blender/Blender/lib-android_arm64|$LIBDIR|g" {} +
-          sed -i "s|D:/FreeProjects/Blender/Blender/lib-android_arm64|$LIBDIR|g" blender36/CMakeLists.txt
+          # Replace Windows hardcoded paths in ALL cmake files across the tree
+          find blender36 -name "*.cmake" -exec sed -i "s|D:/FreeProjects/Blender/Blender/lib-android_arm64|$LIBDIR|g" {} +
+          find blender36 -name "CMakeLists.txt" -exec sed -i "s|D:/FreeProjects/Blender/Blender/lib-android_arm64|$LIBDIR|g" {} +
           # Fix Python include dir (original has include/include/ but real path is include/Include/)
           sed -i 's|cpython/include/include/|cpython/include/Include/|g' blender36/build_files/cmake/Modules/FindPythonLibsUnix.cmake
           # pnglibconf.h is a generated file; copy from prebuilt
