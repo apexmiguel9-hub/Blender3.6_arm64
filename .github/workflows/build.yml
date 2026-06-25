@@ -257,10 +257,12 @@ jobs:
               sys.exit(1)
 
           # Debug: check for clog rule before patching
-          if 'libbf_intern_clog' in t:
-              print("clog rule FOUND before patching")
-          else:
-              print("clog rule MISSING before patching")
+          has_clog_rule = 'build lib/libbf_intern_clog.a:' in t
+          print("clog BUILD RULE " + ("FOUND" if has_clog_rule else "MISSING") + " before patching")
+          if not has_clog_rule:
+              # Also check if it exists as a dependency only (via phony target)
+              if 'lib/libbf_intern_clog.a' in t:
+                  print("(note: libbf_intern_clog.a appears only as a dependency, not as a build rule)")
 
           # Binary build rules: datatoc gets cp'd from native build, datatoc_icon is no-op
           for name, path in (('datatoc', '/tmp/host_tools/datatoc'),
@@ -305,11 +307,10 @@ jobs:
           print('build.ninja patched OK')
 
           # Debug: check for clog rule after patching
-          if 'libbf_intern_clog' in t:
-              print("clog rule PRESENT after patching")
-          else:
-              print("clog rule MISSING after patching")
-              print("Adding dummy rule for lib/libbf_intern_clog.a")
+          has_clog_rule = 'build lib/libbf_intern_clog.a:' in t
+          print("clog BUILD RULE " + ("PRESENT" if has_clog_rule else "MISSING") + " after patching")
+          if not has_clog_rule:
+              print("Adding dummy build rule for lib/libbf_intern_clog.a")
               dummy = ('build lib/libbf_intern_clog.a: CUSTOM_COMMAND\n'
                        '  COMMAND = ar crs lib/libbf_intern_clog.a\n'
                        '  RESTAT = 1\n')
