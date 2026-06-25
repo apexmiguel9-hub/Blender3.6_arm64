@@ -134,7 +134,7 @@ jobs:
             -DWITH_CPU_AVX=OFF \
             -DWITH_CPU_AVX2=OFF \
             -DCMAKE_C_FLAGS="-fPIC -Os -DANDROID" \
-            -DCMAKE_CXX_FLAGS="-fPIC -Os -DANDROID" \
+            -DCMAKE_CXX_FLAGS="-fPIC -Os -DANDROID -D_LIBCPP_ENABLE_CXX17_REMOVED_FEATURES -Wno-enum-constexpr-conversion" \
             -DCMAKE_EXE_LINKER_FLAGS="-static-libgcc -static-libstdc++ -Wl,-z,max-page-size=4096" \
             -DCMAKE_SHARED_LINKER_FLAGS="-static-libgcc -static-libstdc++ -Wl,-z,max-page-size=4096" \
             -DCMAKE_BUILD_TYPE=Release \
