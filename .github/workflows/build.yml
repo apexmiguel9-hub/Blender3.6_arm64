@@ -243,6 +243,7 @@ jobs:
           INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/simulation"
           INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/bmesh"
           INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/sequencer"
+          INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/blenfont"
           INC_FLAGS="$INC_FLAGS -I $PWD/../intern/atomic"
           INC_FLAGS="$INC_FLAGS -I $PWD/../intern/guardedalloc"
           INC_FLAGS="$INC_FLAGS -I $PWD/../intern/guardedalloc/intern"
