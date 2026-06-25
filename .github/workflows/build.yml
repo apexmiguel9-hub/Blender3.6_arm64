@@ -325,17 +325,20 @@ jobs:
         if: steps.configure.outcome == 'success'
         run: |
           set -x
-          pwd
-          ls -la blender36/build/ 2>&1 || echo "build dir missing!"
           cd blender36/build
+          echo "=== NINJA STATS ==="
+          ninja -n 2>&1 | head -20 || echo "[ninja dry-run failed]"
+          ninja -t targets all 2>&1 | head -20 || echo "[ninja targets failed]"
+          echo "=== EDGE COUNT ==="
+          grep -cP '^build ' build.ninja || echo "0"
+          echo "=== FULL BUILD ==="
           ninja -j$(nproc) 2>&1 | tee build.log; rc=$?
           echo "=== NINJA EXIT CODE: $rc ==="
-          echo "=== BUILD LOG (last 100 lines) ==="
-          tail -200 build.log 2>/dev/null || echo "(no build.log)"
           echo "=== FAILURES ==="
           grep -i "FAILED\|error:\|build stopped" build.log 2>/dev/null || echo "(none found)"
           if [ "$rc" -ne 0 ]; then
             echo "BUILD FAILED - ninja exit code $rc"
+            tail -100 build.log
             exit 1
           fi
           echo "BUILD COMPLETED SUCCESSFULLY"
