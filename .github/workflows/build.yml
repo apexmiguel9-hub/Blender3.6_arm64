@@ -160,8 +160,59 @@ jobs:
           set -ex
           ls -la /tmp/host_tools/
           mkdir -p blender36/build/bin
+
+          # Replace datatoc_icon with a Python wrapper that generates
+          # PNGs from .dat files using Pillow, avoiding the segfault.
+          cat > blender36/build/bin/datatoc_icon << 'WREOF'
+          #!/usr/bin/env python3
+          import os, struct, sys
+          try:
+              from PIL import Image
+          except ImportError:
+              # If Pillow isn't available, just copy pre-generated files
+              sys.exit(0)
+          if len(sys.argv) < 3:
+              sys.exit(0)
+          src = sys.argv[1]   # /path/to/blender_icons16  (no extension)
+          dst = sys.argv[2]   # /path/to/blender_icons16.png
+          src_dir = src  # dir containing .dat files
+          if not os.path.isdir(src_dir):
+              sys.exit(0)
+          os.makedirs(os.path.dirname(dst), exist_ok=True)
+          cw = ch = 0
+          canvas = None
+          for fname in sorted(os.listdir(src_dir)):
+              if not fname.endswith('.dat'):
+                  continue
+              with open(os.path.join(src_dir, fname), 'rb') as f:
+                  data = f.read()
+              if len(data) < 24:
+                  continue
+              iw, ih, ox, oy, cwn, chn = struct.unpack_from('<IIIIII', data, 0)
+              px = data[24:]
+              if len(px) < iw * ih * 4:
+                  continue
+              if canvas is None:
+                  cw, ch = cwn, chn
+                  canvas = bytearray(cw * ch * 4)
+              for y in range(ih):
+                  for x in range(iw):
+                      si = (y * iw + x) * 4
+                      dx = ox + x; dy = oy + y
+                      if dx < cw and dy < ch:
+                          di = (dy * cw + dx) * 4
+                          canvas[di:di+4] = px[si:si+4]
+          if canvas:
+              Image.frombytes('RGBA', (cw, ch), bytes(canvas)).save(dst)
+              print(f"datatoc_icon wrapper: generated {dst}")
+          WREOF
+          chmod +x blender36/build/bin/datatoc_icon
+          # Also put a copy where the build.ninja expects it
+          mkdir -p blender36/build/bin
           cp /tmp/host_tools/datatoc blender36/build/bin/datatoc
-          cp /tmp/host_tools/datatoc_icon blender36/build/bin/datatoc_icon
+          # Keep a backup of the real datatoc_icon for reference
+          cp /tmp/host_tools/datatoc_icon blender36/build/bin/datatoc_icon.real 2>/dev/null || true
+
           cd blender36/build
 
           # Pre-generate icon sprite PNGs using Python (Pillow).
@@ -230,21 +281,26 @@ jobs:
 
           # Patch build.ninja
           python3 /dev/stdin << 'PYEOF'
-          import re, sys
+           import re, sys, os
           try:
               with open('build.ninja') as f:
                   t = f.read()
           except FileNotFoundError:
-              print("FATAL: build.ninja not found in", __import__('os').getcwd())
+              print("FATAL: build.ninja not found in", os.getcwd())
               sys.exit(1)
 
-          # Binary build rules: copy native binaries instead of linking
+          # Binary build rules: datatoc gets cp'd from native build, datatoc_icon is no-op
           for name, path in (('datatoc', '/tmp/host_tools/datatoc'),
-                             ('datatoc_icon', '/tmp/host_tools/datatoc_icon')):
+                             ('datatoc_icon', None)):
               pat = r'^build bin/' + re.escape(name) + r': .*?^(?=\S|\Z)'
-              rep = ('build bin/' + name + ': CUSTOM_COMMAND\n'
-                     '  COMMAND = cp ' + path + ' bin/' + name + '\n'
-                     '  RESTAT = 1\n')
+              if path:
+                  rep = ('build bin/' + name + ': CUSTOM_COMMAND\n'
+                         '  COMMAND = cp ' + path + ' bin/' + name + '\n'
+                         '  RESTAT = 1\n')
+              else:
+                  rep = ('build bin/' + name + ': CUSTOM_COMMAND\n'
+                         '  COMMAND = :\n'
+                         '  RESTAT = 1\n')
               m = re.search(pat, t, re.MULTILINE | re.DOTALL)
               if m:
                   print("Matched build rule for " + name)
