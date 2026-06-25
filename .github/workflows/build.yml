@@ -259,7 +259,8 @@ jobs:
             "$PWD/../source/blender/blenlib/intern/BLI_ghash_utils.c"
             "$PWD/../source/blender/blenlib/intern/BLI_memarena.c"
             "$PWD/../source/blender/blenlib/intern/BLI_mempool.c"
-            "$PWD/../source/blender/blenlib/intern/hash_mm2a.c"
+            "$PWD/../source/blender/blenlib/intern/hash_mm2a.c" \
+            "$PWD/../source/blender/blenlib/intern/endian_switch.c" \
             "$PWD/../intern/guardedalloc/intern/mallocn.c"
             "$PWD/../intern/guardedalloc/intern/mallocn_guarded_impl.c"
             "$PWD/../intern/guardedalloc/intern/mallocn_lockfree_impl.c"
