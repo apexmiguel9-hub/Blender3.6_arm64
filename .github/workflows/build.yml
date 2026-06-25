@@ -157,6 +157,8 @@ jobs:
       - name: Pre-place native host tools and patch build rules
         if: steps.configure.outcome == 'success'
         run: |
+          set -ex
+          ls -la /tmp/host_tools/
           mkdir -p blender36/build/bin
           cp /tmp/host_tools/datatoc blender36/build/bin/datatoc
           cp /tmp/host_tools/datatoc_icon blender36/build/bin/datatoc_icon
@@ -165,8 +167,11 @@ jobs:
           # Pre-generate icon sprite PNGs using Python (Pillow).
           # Native datatoc_icon segfaults on these .dat files, so we
           # sidestep it entirely.
-          pip install Pillow 2>/dev/null || sudo apt-get install -y python3-pil 2>/dev/null || true
-          python3 << 'PYEOF'
+          python3 -c "from PIL import Image; print('Pillow OK')" \
+            2>/dev/null || pip install Pillow 2>/dev/null || \
+            sudo apt-get install -y python3-pil 2>/dev/null || \
+            echo "WARN: Pillow not available, icons will be skipped"
+          python3 /dev/stdin << 'PYEOF'
           import os, struct, sys
           try:
               from PIL import Image
@@ -178,6 +183,7 @@ jobs:
               src_dir = "../release/datafiles/" + set_name
               dst_png = "release/datafiles/" + set_name + ".png"
               if not os.path.isdir(src_dir):
+                  print("SKIP " + set_name + ": no source dir " + src_dir)
                   return
               os.makedirs("release/datafiles", exist_ok=True)
               cw = ch = 0
@@ -205,7 +211,9 @@ jobs:
                               canvas[di:di+4] = px[si:si+4]
               if canvas:
                   Image.frombytes('RGBA', (cw, ch), bytes(canvas)).save(dst_png)
-                  print(set_name + ": " + str(cw) + "x" + str(ch))
+                  print(set_name + ": " + str(cw) + "x" + str(ch) + " -> " + dst_png)
+              else:
+                  print("WARN: " + set_name + ": no icons generated")
 
           gen_icons('blender_icons16')
           gen_icons('blender_icons32')
@@ -213,23 +221,22 @@ jobs:
 
           # Convert pre-generated PNGs to C source using working datatoc
           for icon in blender_icons16 blender_icons32; do
-            if [ -f "release/datafiles/${icon}.png" ]; then
-              ./bin/datatoc "release/datafiles/${icon}.png" \
-                           "release/datafiles/${icon}.png.c"
-              echo "${icon}.png.c generated"
+            png="release/datafiles/${icon}.png"
+            if [ -f "$png" ]; then
+              ./bin/datatoc "$png" "release/datafiles/${icon}.png.c"
+              echo "${icon}.png.c generated ("$(wc -c < "$png")" bytes)"
             fi
           done
 
-          # Patch build.ninja: replace native binary build rules with cp
-          # and replace icon sprite rules with no-op cp (files pre-generated).
-          cat > /tmp/patch_ninja.py << 'PYEOF'
-          import re
-          with open('build.ninja') as f:
-              t = f.read()
-
-          def replace_rule(pattern, replacement, count=1):
-              global t
-              t = re.sub(pattern, replacement, t, count=count, flags=re.MULTILINE | re.DOTALL)
+          # Patch build.ninja
+          python3 /dev/stdin << 'PYEOF'
+          import re, sys
+          try:
+              with open('build.ninja') as f:
+                  t = f.read()
+          except FileNotFoundError:
+              print("FATAL: build.ninja not found in", __import__('os').getcwd())
+              sys.exit(1)
 
           # Binary build rules: copy native binaries instead of linking
           for name, path in (('datatoc', '/tmp/host_tools/datatoc'),
@@ -238,11 +245,14 @@ jobs:
               rep = ('build bin/' + name + ': CUSTOM_COMMAND\n'
                      '  COMMAND = cp ' + path + ' bin/' + name + '\n'
                      '  RESTAT = 1\n')
-              replace_rule(pat, rep)
+              m = re.search(pat, t, re.MULTILINE | re.DOTALL)
+              if m:
+                  print("Matched build rule for " + name)
+                  t = re.sub(pat, rep, t, count=1, flags=re.MULTILINE | re.DOTALL)
+              else:
+                  print("NO MATCH for build rule: " + name)
 
           # Icon sprite rules: no-op (files pre-generated).
-          # Must handle possible ninja line continuations ($) between outputs.
-          build_dir = os.getcwd()
           for icon in ('blender_icons16', 'blender_icons32'):
               pat = (r'^build\s+(.*\$\s*\n)*.*release/datafiles/' +
                      re.escape(icon) +
@@ -252,20 +262,19 @@ jobs:
               m = re.search(pat, t, re.MULTILINE | re.DOTALL)
               if m:
                   print("Matched icon rule for " + icon)
+                  rep = ('build release/datafiles/' + icon +
+                         '.png release/datafiles/' + icon +
+                         '.png.c: CUSTOM_COMMAND\n'
+                         '  COMMAND = :\n'
+                         '  RESTAT = 1\n')
+                  t = re.sub(pat, rep, t, count=1, flags=re.MULTILINE | re.DOTALL)
               else:
                   print("NO MATCH for icon rule: " + icon)
-              comm = ':  # no-op, files pre-generated'
-              rep = ('build release/datafiles/' + icon + '.png release/datafiles/' +
-                     icon + '.png.c: CUSTOM_COMMAND\n'
-                     '  COMMAND = ' + comm + '\n'
-                     '  RESTAT = 1\n')
-              t = re.sub(pat, rep, t, count=1, flags=re.MULTILINE | re.DOTALL)
 
           with open('build.ninja', 'w') as f:
               f.write(t)
-          print('build.ninja patched')
+          print('build.ninja patched OK')
           PYEOF
-          python3 /tmp/patch_ninja.py
 
 
 
