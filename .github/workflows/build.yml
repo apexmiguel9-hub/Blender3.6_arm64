@@ -257,7 +257,7 @@ jobs:
           # RNA_blender.h, RNA_blender_cpp.h, RNA_prototypes.h, etc.
           echo "=== Compiling makesrna natively (gcc) ==="
           RNA_INTERN="$PWD/../source/blender/makesrna/intern"
-          INC_FLAGS="-DNDEBUG -D_LIBCPP_ENABLE_CXX17_REMOVED_FEATURES"
+          INC_FLAGS="-DNDEBUG -D_LIBCPP_ENABLE_CXX17_REMOVED_FEATURES -DWITH_FLUID"
           INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/makesrna"
           INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/makesdna"
           INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/makesdna/intern"
