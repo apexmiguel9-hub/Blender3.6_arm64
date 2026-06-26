@@ -1,643 +1,444 @@
 name: Build Blender 3.6.22 for Android ARM64
-
-on:
+true:
   push:
-    branches: [ main ]
-  workflow_dispatch:
-
+    branches:
+    - main
+  workflow_dispatch: null
 env:
   ANDROID_API: 24
   NDK_VERSION: r26b
-
 jobs:
   build:
     name: Build libblender.so for ARM64
     runs-on: ubuntu-22.04
     steps:
-      - name: Checkout this repo (patches, scripts)
-        uses: actions/checkout@v4
+    - name: Checkout this repo (patches, scripts)
+      uses: actions/checkout@v4
+    - name: Checkout Blender 3.6.22 (epai port)
+      uses: actions/checkout@v4
+      with:
+        repository: dshawshank/Blender-android_arm64
+        ref: blender-v3.6-release
+        path: blender36
+    - name: Checkout prebuilt Android libraries
+      uses: actions/checkout@v4
+      with:
+        repository: dshawshank/lib-android_arm64
+        path: lib-android_arm64
+    - name: Setup Android NDK
+      uses: nttld/setup-ndk@v1
+      with:
+        ndk-version: ${{ env.NDK_VERSION }}
+        add-to-path: false
+    - name: Install system deps
+      run: 'sudo apt-get update
 
-      - name: Checkout Blender 3.6.22 (epai port)
-        uses: actions/checkout@v4
-        with:
-          repository: dshawshank/Blender-android_arm64
-          ref: blender-v3.6-release
-          path: blender36
+        sudo apt-get install -y ninja-build pkg-config bison flex gettext gcc g++
+        qemu-user-static binfmt-support
 
-      - name: Checkout prebuilt Android libraries
-        uses: actions/checkout@v4
-        with:
-          repository: dshawshank/lib-android_arm64
-          path: lib-android_arm64
+        '
+    - name: Patch hardcoded library paths in cmake modules
+      run: "LIBDIR=${{ github.workspace }}/lib-android_arm64\n# Replace Windows hardcoded\
+        \ paths in ALL cmake files across the tree\nfind blender36 -name \"*.cmake\"\
+        \ -exec sed -i \"s|D:/FreeProjects/Blender/Blender/lib-android_arm64|$LIBDIR|g\"\
+        \ {} +\nfind blender36 -name \"CMakeLists.txt\" -exec sed -i \"s|D:/FreeProjects/Blender/Blender/lib-android_arm64|$LIBDIR|g\"\
+        \ {} +\n# Fix Python include dir (original has include/include/ but real path\
+        \ is include/Include/)\nsed -i 's|cpython/include/include/|cpython/include/Include/|g'\
+        \ blender36/build_files/cmake/Modules/FindPythonLibsUnix.cmake\n# pnglibconf.h\
+        \ is a generated file; copy from prebuilt\ncp \"$LIBDIR/Png/include/libpng-1.6.40/scripts/pnglibconf.h.prebuilt\"\
+        \ \\\n   \"$LIBDIR/Png/include/libpng-1.6.40/pnglibconf.h\"\n# Android NDK\
+        \ doesn't have execinfo.h / backtrace()\nsed -i 's|#  if defined(HAVE_EXECINFO_H)|#\
+        \  if defined(HAVE_EXECINFO_H) \\&\\& !defined(__ANDROID__)|' \\\n  blender36/source/blender/blenlib/intern/system.c\n\
+        echo \"=== Patched paths ===\"\n"
+    - name: Build native host tools (datatoc)
+      run: "mkdir -p /tmp/host_tools\n# Compile datatoc natively for x86_64, since\
+        \ cross-compiled ARM64\n# versions can't run under QEMU (missing Android linker).\n\
+        # Use -DNDEBUG to match the Release build (asserts disabled).\ngcc -DNDEBUG\
+        \ -o /tmp/host_tools/datatoc \\\n  -I blender36/source/blender/datatoc \\\n\
+        \  -I blender36/source/blender/makesdna \\\n  -I blender36/source/blender/blenlib\
+        \ \\\n  blender36/source/blender/datatoc/datatoc.c\n# datatoc_icon also needs\
+        \ libpng-dev\nsudo apt-get install -y libpng-dev 2>/dev/null || true\ngcc\
+        \ -DNDEBUG -o /tmp/host_tools/datatoc_icon \\\n  -I blender36/source/blender/datatoc\
+        \ \\\n  -I blender36/source/blender/makesdna \\\n  -I blender36/source/blender/blenlib\
+        \ \\\n  blender36/source/blender/datatoc/datatoc_icon.c \\\n  -lpng -lz -lm\n\
+        echo \"=== Host tools built ===\"\n"
+    - name: Configure Blender 3.6 for Android
+      id: configure
+      run: "mkdir -p blender36/build && cd blender36/build\n\n# Host tools (datatoc,\
+        \ makesdna, makesrna) are linked statically,\n# so QEMU user-mode (via binfmt_misc)\
+        \ can run them without the\n# Android system linker (/system/bin/linker64).\n\
+        cmake -G Ninja .. \\\n  -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake\
+        \ \\\n  -DANDROID_ABI=arm64-v8a \\\n  -DANDROID_PLATFORM=${{ env.ANDROID_API\
+        \ }} \\\n  -DWITH_BLENDER=ON \\\n  -DWITH_PLAYER=OFF \\\n  -DWITH_GAMEENGINE=OFF\
+        \ \\\n  -DWITH_CYCLES=ON \\\n  -DWITH_COMPOSITOR=ON \\\n  -DWITH_FREESTYLE=ON\
+        \ \\\n  -DWITH_OPENCOLORIO=ON \\\n  -DWITH_OPENVDB=ON \\\n  -DWITH_AUDASPACE=ON\
+        \ \\\n  -DWITH_CODEC_FFMPEG=ON \\\n  -DWITH_OPENAL=ON \\\n  -DWITH_SDL=ON\
+        \ \\\n  -DWITH_PYTHON=ON \\\n  -DWITH_OPENIMAGEIO=ON \\\n  -DWITH_BOOST=ON\
+        \ \\\n  -DWITH_LIBMV=ON \\\n  -DWITH_INTERNATIONAL=OFF \\\n  -DWITH_INSTALL_PORTABLE=ON\
+        \ \\\n  -DWITH_HEADLESS=OFF \\\n  -DWITH_OPENMP=ON \\\n  -DWITH_GHOST_WAYLAND=OFF\
+        \ \\\n  -DWITH_IMAGE_TIFF=ON \\\n  -DWITH_IMAGE_OPENEXR=ON \\\n  -DWITH_ALEMBIC=ON\
+        \ \\\n  -DWITH_USD=ON \\\n  -DWITH_GHOST_X11=OFF \\\n  -DWITH_INPUT_NDOF=OFF\
+        \ \\\n  -DWITH_MEM_JEMALLOC=OFF \\\n  -DWITH_TBB=ON \\\n  -DWITH_GMP=ON \\\
+        \n  -DWITH_OPENSUBDIV=ON \\\n  -DWITH_OPENCOLLADA=OFF \\\n  -DWITH_FFTW3=ON\
+        \ \\\n  -DWITH_OPENIMAGEDENOISE=ON \\\n  -DWITH_COMPOSITOR_CPU=OFF \\\n  -DWITH_CODEC_FFMPEG=OFF\
+        \ \\\n  -DWITH_XR_OPENXR=OFF \\\n  -DWITH_CPU_SSE=OFF \\\n  -DWITH_CPU_AVX=OFF\
+        \ \\\n  -DWITH_CPU_AVX2=OFF \\\n  -DLIB_DIR=\"${{ github.workspace }}/lib-android_arm64\"\
+        \ \\\n  -DDATATOC_EXECUTABLE=\"/tmp/host_tools/datatoc\" \\\n  -DDATATOC_ICON_EXECUTABLE=\"\
+        /tmp/host_tools/datatoc_icon\" \\\n  -DCMAKE_C_FLAGS=\"-fPIC -Os -DANDROID\"\
+        \ \\\n  -DCMAKE_CXX_FLAGS=\"-fPIC -Os -DANDROID -D_LIBCPP_ENABLE_CXX17_REMOVED_FEATURES\
+        \ -Wno-enum-constexpr-conversion -Wno-error=enum-constexpr-conversion\" \\\
+        \n  -DCMAKE_EXE_LINKER_FLAGS=\"-static-libgcc -static-libstdc++ -Wl,-z,max-page-size=4096\
+        \ -Wl,--allow-shlib-undefined\" \\\n  -DCMAKE_SHARED_LINKER_FLAGS=\"-static-libgcc\
+        \ -static-libstdc++ -Wl,-z,max-page-size=4096 -Wl,--allow-shlib-undefined\"\
+        \ \\\n  -DCMAKE_BUILD_TYPE=Release \\\n  -DCMAKE_FIND_ROOT_PATH=\"${{ github.workspace\
+        \ }}/lib-android_arm64\" \\\n  -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=BOTH \\\
+        \n  -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=BOTH \\\n  -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER\
+        \ \\\n  -DCMAKE_SKIP_RPATH=ON \\\n  -DCMAKE_SKIP_INSTALL_RPATH=ON 2>&1 | tee\
+        \ cmake_config.log\n"
+    - name: Show CMake error on failure
+      if: steps.configure.outcome == 'failure'
+      run: 'echo "=== CMake Configuration Failed ==="
 
-      - name: Setup Android NDK
-        uses: nttld/setup-ndk@v1
-        with:
-          ndk-version: ${{ env.NDK_VERSION }}
-          add-to-path: false
+        cat blender36/build/cmake_config.log
 
-      - name: Install system deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build pkg-config bison flex gettext gcc g++ qemu-user-static binfmt-support
+        echo "=== CMakeError.log ==="
 
-      - name: Patch hardcoded library paths in cmake modules
-        run: |
-          LIBDIR=${{ github.workspace }}/lib-android_arm64
-          # Replace Windows hardcoded paths in ALL cmake files across the tree
-          find blender36 -name "*.cmake" -exec sed -i "s|D:/FreeProjects/Blender/Blender/lib-android_arm64|$LIBDIR|g" {} +
-          find blender36 -name "CMakeLists.txt" -exec sed -i "s|D:/FreeProjects/Blender/Blender/lib-android_arm64|$LIBDIR|g" {} +
-          # Fix Python include dir (original has include/include/ but real path is include/Include/)
-          sed -i 's|cpython/include/include/|cpython/include/Include/|g' blender36/build_files/cmake/Modules/FindPythonLibsUnix.cmake
-          # pnglibconf.h is a generated file; copy from prebuilt
-          cp "$LIBDIR/Png/include/libpng-1.6.40/scripts/pnglibconf.h.prebuilt" \
-             "$LIBDIR/Png/include/libpng-1.6.40/pnglibconf.h"
-          # Android NDK doesn't have execinfo.h / backtrace()
-          sed -i 's|#  if defined(HAVE_EXECINFO_H)|#  if defined(HAVE_EXECINFO_H) \&\& !defined(__ANDROID__)|' \
-            blender36/source/blender/blenlib/intern/system.c
-          echo "=== Patched paths ==="
+        cat blender36/build/CMakeFiles/CMakeError.log 2>/dev/null || true
 
-      - name: Build native host tools (datatoc)
-        run: |
-          mkdir -p /tmp/host_tools
-          # Compile datatoc natively for x86_64, since cross-compiled ARM64
-          # versions can't run under QEMU (missing Android linker).
-          # Use -DNDEBUG to match the Release build (asserts disabled).
-          gcc -DNDEBUG -o /tmp/host_tools/datatoc \
-            -I blender36/source/blender/datatoc \
-            -I blender36/source/blender/makesdna \
-            -I blender36/source/blender/blenlib \
-            blender36/source/blender/datatoc/datatoc.c
-          # datatoc_icon also needs libpng-dev
-          sudo apt-get install -y libpng-dev 2>/dev/null || true
-          gcc -DNDEBUG -o /tmp/host_tools/datatoc_icon \
-            -I blender36/source/blender/datatoc \
-            -I blender36/source/blender/makesdna \
-            -I blender36/source/blender/blenlib \
-            blender36/source/blender/datatoc/datatoc_icon.c \
-            -lpng -lz -lm
-          echo "=== Host tools built ==="
+        '
+    - name: Pre-place native host tools and patch build rules
+      if: steps.configure.outcome == 'success'
+      run: "set -ex\nls -la /tmp/host_tools/\n\ncd blender36/build\n\n# Run Python\
+        \ patching script for RNA source files (avoids complex sed escaping in YAML)\n\
+        python3 /home/runner/work/Blender3.6_arm64/Blender3.6_arm64/patch_rna.py\n\
+        \n# Build makesdna natively (x86_64) and generate dna.c / dna_type_offsets.h\n\
+        # The android fork comments out the makesdna executable and custom_command\n\
+        # in CMakeLists.txt, so these files are never produced during cmake.\n# Without\
+        \ them, compilation of dna.c.o fails at step ~3085.\nmkdir -p /tmp/host_tools\n\
+        DNA_GEN_DIR=\"source/blender/makesdna/intern\"\nif [ -f \"${DNA_GEN_DIR}/dna_includes_as_strings.h\"\
+        \ ]; then\n  echo \"=== Compiling makesdna natively (C with gcc, C++ with\
+        \ g++) ===\"\n  INC_FLAGS=\"-DNDEBUG -DWITH_DNA_GHASH\"\n  INC_FLAGS=\"$INC_FLAGS\
+        \ -I $PWD/../source/blender/makesdna\"\nINC_FLAGS=\"$INC_FLAGS -I $PWD/../source/blender/makesdna/intern\"\
+        \nINC_FLAGS=\"$INC_FLAGS -I $PWD/source/blender/makesdna/intern\"\n  INC_FLAGS=\"\
+        $INC_FLAGS -I $PWD/../source/blender/blenlib\"\n  INC_FLAGS=\"$INC_FLAGS -I\
+        \ $PWD/../source/blender/imbuf\"\n  INC_FLAGS=\"$INC_FLAGS -I $PWD/../intern/atomic\"\
+        \n  INC_FLAGS=\"$INC_FLAGS -I $PWD/../intern/guardedalloc\"\n  INC_FLAGS=\"\
+        $INC_FLAGS -I $PWD/../intern/guardedalloc/intern\"\n  INC_FLAGS=\"$INC_FLAGS\
+        \ -I $PWD/${DNA_GEN_DIR}\"\n  OBJDIR=$(mktemp -d)\n  # C sources (gcc) - makesdna\
+        \ executable does NOT need dna_genfile.c\n  for src in \\\n    \"$PWD/../source/blender/makesdna/intern/makesdna.c\"\
+        \ \\\n    \"$PWD/../source/blender/makesdna/intern/dna_utils.c\" \\\n    \"\
+        $PWD/../source/blender/blenlib/intern/BLI_assert.c\" \\\n    \"$PWD/../source/blender/blenlib/intern/BLI_ghash.c\"\
+        \ \\\n    \"$PWD/../source/blender/blenlib/intern/BLI_ghash_utils.c\" \\\n\
+        \    \"$PWD/../source/blender/blenlib/intern/BLI_memarena.c\" \\\n    \"$PWD/../source/blender/blenlib/intern/BLI_mempool.c\"\
+        \ \\\n    \"$PWD/../source/blender/blenlib/intern/hash_mm2a.c\" \\\n    \"\
+        $PWD/../source/blender/blenlib/intern/endian_switch.c\" \\\n    \"$PWD/../intern/guardedalloc/intern/mallocn.c\"\
+        \ \\\n    \"$PWD/../intern/guardedalloc/intern/mallocn_guarded_impl.c\" \\\
+        \n    \"$PWD/../intern/guardedalloc/intern/mallocn_lockfree_impl.c\"; do\n\
+        \    bn=$(basename \"$src\" .c)\n    gcc -c $INC_FLAGS -o \"$OBJDIR/${bn}.o\"\
+        \ \"$src\" 2>&1\n  done\n  # C++ sources (g++ - DNA C++ headers are skipped\
+        \ when __cplusplus not\n  # defined, but guardedalloc .cc files need C++ stdlib)\n\
+        \  for src in \\\n    \"$PWD/../intern/guardedalloc/intern/memory_usage.cc\"\
+        \ \\\n    \"$PWD/../intern/guardedalloc/intern/leak_detector.cc\"; do\n  \
+        \  bn=$(basename \"$src\" .cc)\n    g++ -c $INC_FLAGS -o \"$OBJDIR/${bn}.o\"\
+        \ \"$src\" 2>&1\n  done\n  # Link with g++\n  g++ -o /tmp/host_tools/makesdna\
+        \ \"$OBJDIR\"/*.o -lm -lpthread 2>&1\n  rm -rf \"$OBJDIR\"\n  echo \"=== Running\
+        \ makesdna to generate dna.c ===\"\n  /tmp/host_tools/makesdna \\\n    \"\
+        ${DNA_GEN_DIR}/dna.c\" \\\n    \"${DNA_GEN_DIR}/dna_type_offsets.h\" \\\n\
+        \    \"${DNA_GEN_DIR}/dna_verify.c\" \\\n    \"$PWD/../source/blender/makesdna/\"\
+        \ 2>&1\n  # Verify files were actually created\n  ls -la \"${DNA_GEN_DIR}/dna.c\"\
+        \ \"${DNA_GEN_DIR}/dna_type_offsets.h\" \"${DNA_GEN_DIR}/dna_verify.c\"\n\
+        \  # Compile native libbf_dna.a from generated files (needed by makesrna)\n\
+        \  echo \"=== Compiling native libbf_dna.a from generated files ===\"\n  DNA_OBJDIR=$(mktemp\
+        \ -d)\n  for src in \\\n    \"${DNA_GEN_DIR}/dna.c\" \\\n    \"${DNA_GEN_DIR}/dna_verify.c\"\
+        \ \\\n    \"$PWD/../source/blender/makesdna/intern/dna_genfile.c\" \\\n  \
+        \  \"$PWD/../source/blender/makesdna/intern/dna_utils.c\" \\\n    \"$PWD/../source/blender/makesdna/intern/dna_defaults.c\"\
+        \ \\\n    \"$PWD/../source/blender/blenlib/intern/BLI_assert.c\" \\\n    \"\
+        $PWD/../source/blender/blenlib/intern/BLI_ghash.c\" \\\n    \"$PWD/../source/blender/blenlib/intern/BLI_ghash_utils.c\"\
+        \ \\\n    \"$PWD/../source/blender/blenlib/intern/BLI_memarena.c\" \\\n  \
+        \  \"$PWD/../source/blender/blenlib/intern/BLI_mempool.c\" \\\n    \"$PWD/../source/blender/blenlib/intern/hash_mm2a.c\"\
+        \ \\\n    \"$PWD/../source/blender/blenlib/intern/endian_switch.c\" \\\n \
+        \   \"$PWD/../intern/guardedalloc/intern/mallocn.c\" \\\n    \"$PWD/../intern/guardedalloc/intern/mallocn_guarded_impl.c\"\
+        \ \\\n    \"$PWD/../intern/guardedalloc/intern/mallocn_lockfree_impl.c\";\
+        \ do\n    bn=$(basename \"$src\" .c)\n    gcc -c $INC_FLAGS -o \"$DNA_OBJDIR/${bn}.o\"\
+        \ \"$src\" 2>&1\n  done\n  for src in \\\n    \"$PWD/../intern/guardedalloc/intern/memory_usage.cc\"\
+        \ \\\n    \"$PWD/../intern/guardedalloc/intern/leak_detector.cc\"; do\n  \
+        \  bn=$(basename \"$src\" .cc)\n    g++ -c $INC_FLAGS -o \"$DNA_OBJDIR/${bn}.o\"\
+        \ \"$src\" 2>&1\n  done\n  ar rcs /tmp/host_tools/libbf_dna_native.a \"$DNA_OBJDIR\"\
+        /*.o\n  rm -rf \"$DNA_OBJDIR\"\nelse\n  echo \"WARNING: generated header dna_includes_as_strings.h\
+        \ not found, cannot build makesdna\"\nfi\n\n# Build makesrna natively and\
+        \ run it to generate rna_*_gen.c, \n# RNA_blender.h, RNA_blender_cpp.h, RNA_prototypes.h,\
+        \ etc.\necho \"=== Compiling makesrna natively (gcc) ===\"\nRNA_INTERN=\"\
+        $PWD/../source/blender/makesrna/intern\"\nINC_FLAGS=\"-DNDEBUG -D_LIBCPP_ENABLE_CXX17_REMOVED_FEATURES\
+        \ -DWITH_FLUID\"\nINC_FLAGS=\"$INC_FLAGS -I $PWD/../source/blender/makesrna\"\
+        \nINC_FLAGS=\"$INC_FLAGS -I $PWD/../source/blender/makesdna\"\nINC_FLAGS=\"\
+        $INC_FLAGS -I $PWD/../source/blender/makesdna/intern\"\nINC_FLAGS=\"$INC_FLAGS\
+        \ -I $PWD/source/blender/makesdna/intern\"\nINC_FLAGS=\"$INC_FLAGS -I $PWD/../source/blender/blenlib\"\
+        \nINC_FLAGS=\"$INC_FLAGS -I $PWD/../source/blender/blenlib/intern\"\nINC_FLAGS=\"\
+        $INC_FLAGS -I $PWD/../source/blender/blenkernel\"\nINC_FLAGS=\"$INC_FLAGS\
+        \ -I $PWD/../source/blender/imbuf\"\nINC_FLAGS=\"$INC_FLAGS -I $PWD/../source/blender/gpu\"\
+        \nINC_FLAGS=\"$INC_FLAGS -I $PWD/../source/blender/windowmanager\"\nINC_FLAGS=\"\
+        $INC_FLAGS -I $PWD/../source/blender/blenloader\"\nINC_FLAGS=\"$INC_FLAGS\
+        \ -I $PWD/../source/blender/editors/include\"\nINC_FLAGS=\"$INC_FLAGS -I $PWD/../source/blender/blentranslation\"\
+        \nINC_FLAGS=\"$INC_FLAGS -I $PWD/../source/blender/modifiers\"\nINC_FLAGS=\"\
+        $INC_FLAGS -I $PWD/../source/blender/depsgraph\"\nINC_FLAGS=\"$INC_FLAGS -I\
+        \ $PWD/../source/blender/render\"\nINC_FLAGS=\"$INC_FLAGS -I $PWD/../source/blender/simulation\"\
+        \nINC_FLAGS=\"$INC_FLAGS -I $PWD/../source/blender/bmesh\"\nINC_FLAGS=\"$INC_FLAGS\
+        \ -I $PWD/../source/blender/sequencer\"\nINC_FLAGS=\"$INC_FLAGS -I $PWD/../source/blender/blenfont\"\
+        \nINC_FLAGS=\"$INC_FLAGS -I $PWD/../source/blender/nodes\"\nINC_FLAGS=\"$INC_FLAGS\
+        \ -I $PWD/../intern/atomic\"\nINC_FLAGS=\"$INC_FLAGS -I $PWD/../intern/guardedalloc\"\
+        \nINC_FLAGS=\"$INC_FLAGS -I $PWD/../intern/guardedalloc/intern\"\nINC_FLAGS=\"\
+        $INC_FLAGS -I $PWD/../intern/clog\"\nINC_FLAGS=\"$INC_FLAGS -I $PWD/../release/datafiles/userdef\"\
+        \nRNA_OBJDIR=$(mktemp -d)\n# Compile support libraries (gcc)\nSUPPORT_SRCS=(\n\
+        \  \"$PWD/../source/blender/blenlib/intern/BLI_assert.c\"\n  \"$PWD/../source/blender/blenlib/intern/BLI_ghash.c\"\
+        \n  \"$PWD/../source/blender/blenlib/intern/BLI_ghash_utils.c\"\n  \"$PWD/../source/blender/blenlib/intern/BLI_memarena.c\"\
+        \n  \"$PWD/../source/blender/blenlib/intern/BLI_mempool.c\"\n  \"$PWD/../source/blender/blenlib/intern/hash_mm2a.c\"\
+        \ \\\n  \"$PWD/../source/blender/blenlib/intern/endian_switch.c\" \\\n  \"\
+        $PWD/../source/blender/blenlib/intern/listbase.cc\" \\\n  \"$PWD/../intern/guardedalloc/intern/mallocn.c\"\
+        \n  \"$PWD/../intern/guardedalloc/intern/mallocn_guarded_impl.c\"\n  \"$PWD/../intern/guardedalloc/intern/mallocn_lockfree_impl.c\"\
+        \n  \"$PWD/../intern/clog/clog.c\"\n  \"$PWD/../release/datafiles/userdef/userdef_default.c\"\
+        \n  \"$PWD/../release/datafiles/userdef/userdef_default_theme.c\"\n)\nfor\
+        \ src in \"${SUPPORT_SRCS[@]}\"; do\n  bn=$(basename \"$src\" .c)\n  echo\
+        \ \"  gcc ${bn}.c\"\n  gcc -w -c $INC_FLAGS -o \"$RNA_OBJDIR/${bn}.o\" \"\
+        $src\" 2>&1\ndone\n# Compile support C++ (g++)\nfor src in \\\n  \"$PWD/../intern/guardedalloc/intern/memory_usage.cc\"\
+        \ \\\n  \"$PWD/../intern/guardedalloc/intern/leak_detector.cc\"; do\n  bn=$(basename\
+        \ \"$src\" .cc)\n  echo \"  g++ ${bn}.cc\"\n  g++ -w -c $INC_FLAGS -o \"$RNA_OBJDIR/${bn}.o\"\
+        \ \"$src\" 2>&1\ndone\n# Compile makesrna main + rna_define.c\necho \"  gcc\
+        \ makesrna.c\"\ngcc -w -c $INC_FLAGS -o \"$RNA_OBJDIR/makesrna.o\" \"$RNA_INTERN/makesrna.c\"\
+        \ 2>&1\necho \"  gcc rna_define.c\"\ngcc -w -c $INC_FLAGS -o \"$RNA_OBJDIR/rna_define.o\"\
+        \ \"$RNA_INTERN/rna_define.c\" 2>&1\n# Compile all rna_*.c definition files\
+        \ needed by makesrna\nRNA_DEFS=$(find \"$RNA_INTERN\" -maxdepth 1 -name 'rna_*.c'\
+        \ ! -name 'rna_*_api.c' ! -name 'rna_define.c' ! -name 'rna_access*')\nRNA_DEF_COUNT=0\n\
+        for src in $RNA_DEFS; do\n  bn=$(basename \"$src\" .c)\n  echo \"  gcc ${bn}.c\"\
+        \n  gcc -w -c $INC_FLAGS -o \"$RNA_OBJDIR/${bn}.o\" \"$src\" 2>&1\n  RNA_DEF_COUNT=$((RNA_DEF_COUNT\
+        \ + 1))\ndone\necho \"Compiled $RNA_DEF_COUNT RNA def files\"\n# Compile rna_*_api.c\
+        \ files\nRNA_APIS=$(find \"$RNA_INTERN\" -maxdepth 1 -name 'rna_*_api.c')\n\
+        for src in $RNA_APIS; do\n  bn=$(basename \"$src\" .c)\n  echo \"  gcc ${bn}.c\"\
+        \n  gcc -w -c $INC_FLAGS -o \"$RNA_OBJDIR/${bn}.o\" \"$src\" 2>&1\ndone\n\
+        # Link with g++ (include native libbf_dna.a for DNA symbols)\ng++ -o /tmp/host_tools/makesrna\
+        \ \"$RNA_OBJDIR\"/*.o /tmp/host_tools/libbf_dna_native.a -lm -lpthread 2>&1\n\
+        rm -rf \"$RNA_OBJDIR\"\necho \"=== Running makesrna ===\"\nmkdir -p \"$PWD/source/blender/makesrna\"\
+        \nmkdir -p \"$PWD/source/blender/makesrna/intern\"\n/tmp/host_tools/makesrna\
+        \ \\\n  \"$PWD/source/blender/makesrna/intern/\" \\\n  \"$PWD/source/blender/makesrna/\"\
+        \ 2>&1\necho \"=== Generated files ===\"\nls -la \"$PWD/source/blender/makesrna/\"\
+        RNA_*.h 2>/dev/null\nls \"$PWD/source/blender/makesrna/intern/\"*_gen.c 2>/dev/null\
+        \ | wc -l\n\n# Scan build.ninja for diagnostics and add dummy rules for missing\
+        \ .a targets\npython3 /dev/stdin << 'PYEOF'\nimport re, sys, os\n\ndef read_file(path):\n\
+        \    try:\n        with open(path) as f:\n            return f.read()\n  \
+        \  except FileNotFoundError:\n        return None\n\nt = read_file('build.ninja')\n\
+        if t is None:\n    print(\"FATAL: build.ninja not found in\", os.getcwd())\n\
+        \    sys.exit(1)\n\n# Also read included ninja files (cmake >=3.30 may split\
+        \ rules)\nninja_content = t\nfor m in re.finditer(r'^include\\s+(\\S+)', t,\
+        \ re.MULTILINE):\n    inc = m.group(1)\n    inc_txt = read_file(inc)\n   \
+        \ if inc_txt is not None:\n        print(\"Included ninja file: \" + inc +\
+        \ \" (\" + str(len(inc_txt)) + \" bytes)\")\n        ninja_content += '\\\
+        n' + inc_txt\n    else:\n        print(\"WARNING: included ninja file not\
+        \ found: \" + inc)\n\n# Diagnostic: list all .a build rules\nbuild_lines =\
+        \ [l for l in ninja_content.split('\\n') if l.startswith('build ') and '.a:'\
+        \ in l]\nprint(\"=== ALL .a BUILD RULES (\" + str(len(build_lines)) + \")\
+        \ ===\")\nfor bl in build_lines:\n    print(\"  \" + bl.strip())\n\n# Diagnostic:\
+        \ list all .o build rules\no_rules = [l for l in ninja_content.split('\\n')\
+        \ if l.startswith('build ') and '.o:' in l]\nprint(\"=== ALL .o BUILD RULES\
+        \ (\" + str(len(o_rules)) + \") ===\")\nfor ol in o_rules[:10]:\n    print(\"\
+        \  \" + ol.strip())\nif len(o_rules) > 10:\n    print(\"  ... (\" + str(len(o_rules)\
+        \ - 10) + \" more)\")\n\n# Diagnostic: list phony targets that depend on .a\
+        \ files\nphony_a_deps = set()\nfor l in ninja_content.split('\\n'):\n    l\
+        \ = l.strip()\n    if l.startswith('build ') and ': phony' in l:\n       \
+        \ deps = l.split(':')[1].replace('phony', '').strip()\n        for dep in\
+        \ deps.split():\n            dep = dep.strip()\n            if dep.endswith('.a')\
+        \ and dep not in phony_a_deps:\n                phony_a_deps.add(dep)\nprint(\"\
+        === PHONY TARGETS DEPENDING ON .a FILES (\" + str(len(phony_a_deps)) + \"\
+        ) ===\")\nfor d in sorted(phony_a_deps):\n    print(\"  \" + d)\n\n# Check\
+        \ which .a deps are missing build rules\nexisting_a_rules = set()\nfor bl\
+        \ in build_lines:\n    parts = bl.split(':')\n    outputs = parts[0].replace('build\
+        \ ', '').strip().split()\n    for out in outputs:\n        if out.endswith('.a'):\n\
+        \            existing_a_rules.add(out)\n\n# Find all .a deps from ALL build\
+        \ rules, not just phony targets\nall_a_deps = set()\nfor l in ninja_content.split('\\\
+        n'):\n    l = l.strip()\n    if l.startswith('build ') and '.a' in l:\n  \
+        \      # Extract inputs/deps after the first colon\n        colon_pos = l.find(':')\n\
+        \        if colon_pos > 0:\n            after_colon = l[colon_pos+1:]\n  \
+        \          parts = after_colon.split('|')\n            for part in parts:\n\
+        \                deps = part.strip().split()\n                for dep in deps:\n\
+        \                    dep = dep.strip()\n                    if dep.endswith('.a'):\n\
+        \                        all_a_deps.add(dep)\n\nmissing_a = sorted(all_a_deps\
+        \ - existing_a_rules)\n\n# Also detect self-referencing phony .a targets (cmake\
+        \ generates these\n# for libraries with no source files, e.g. bf_intern_clog\
+        \ on Android).\nfor bl in build_lines:\n    l = bl.strip()\n    if ': phony'\
+        \ in l:\n        parts = l.split(':')\n        out = parts[0].replace('build\
+        \ ', '').strip()\n        if out.endswith('.a'):\n            raw_deps = parts[1].replace('phony',\
+        \ '').strip()\n            dep_list = raw_deps.split()\n            for dep\
+        \ in dep_list:\n                # If a phony target's dep has the right basename\
+        \ but wrong prefix,\n                # it's likely a self-ref that needs a\
+        \ dummy rule.\n                dep_plain = dep.split('/')[-1]\n          \
+        \      out_plain = out.split('/')[-1]\n                if dep_plain == out_plain\
+        \ and dep not in existing_a_rules and dep not in missing_a:\n            \
+        \        missing_a.append(dep)\n                    print(\"  SELF-REF phony\
+        \ .a: \" + out + \" -> \" + dep)\nmissing_a = sorted(missing_a)\n\nprint(\"\
+        === MISSING .a BUILD RULES (\" + str(len(missing_a)) + \") ===\")\nfor a in\
+        \ missing_a:\n    print(\"  \" + a)\n\n# Add dummy rules for missing .a (fallback\
+        \ safety net, rarely triggers).\ndummy_block = \"\"\nfor a in missing_a:\n\
+        \    dummy_block += ('build ' + a + ': CUSTOM_COMMAND\\n'\n              \
+        \      '  COMMAND = ar crs ' + a + '\\n'\n                    '  RESTAT =\
+        \ 1\\n\\n')\nif dummy_block:\n    with open('build.ninja', 'a') as f:\n  \
+        \      f.write('\\n' + dummy_block)\n    print(\"Added \" + str(len(missing_a))\
+        \ + \" dummy .a build rules\")\n\n# Replace ARM64 cross-compiled datatoc rules\
+        \ with CUSTOM_COMMAND\n# that copies the native x86_64 host binary (avoids\
+        \ QEMU binfmt issues).\n# No re.DOTALL — .*? with DOTALL *and* a \\nbuild\
+        \ lookahead is safer but\n# still risks crossing rules; use single-line matching\
+        \ instead.\nfor name, host_path in (('datatoc', '/tmp/host_tools/datatoc'),\n\
+        \                        ('datatoc_icon', '/tmp/host_tools/datatoc_icon')):\n\
+        \    pat = (r'^build bin/' + re.escape(name) +\n           r': C_EXECUTABLE_LINKER__'\
+        \ +\n           re.escape(name) +\n           r'_Release [^\\n]*(\\n\\s+[^\\\
+        n]*)*')\n    rep = ('build bin/' + name + ': CUSTOM_COMMAND\\n'\n        \
+        \   '  COMMAND = cp ' + host_path + ' bin/' + name + '\\n'\n           ' \
+        \ RESTAT = 1\\n')\n    m = re.search(pat, t, re.MULTILINE)\n    if m:\n  \
+        \      print(\"Replaced build rule for bin/\" + name)\n        t = re.sub(pat,\
+        \ rep, t, count=1, flags=re.MULTILINE)\n    else:\n        print(\"WARNING:\
+        \ no build rule found for bin/\" + name)\n\n# Pre-generate icon PNGs using\
+        \ Python (datatoc_icon host binary segfaults).\nos.makedirs('release/datafiles',\
+        \ exist_ok=True)\nfor icon_set in ('blender_icons16', 'blender_icons32'):\n\
+        \    src_dir = \"../release/datafiles/\" + icon_set\n    dst_png = \"release/datafiles/\"\
+        \ + icon_set + \".png\"\n    dst_c = dst_png + \".c\"\n    if not os.path.isdir(src_dir):\n\
+        \        print(\"SKIP \" + icon_set + \": no source dir \" + src_dir)\n  \
+        \      continue\n    # Generate the PNG from .dat files using pure Python\
+        \ (PIL-free).\n    import struct, zlib\n    cw = ch = 0\n    canvas = None\n\
+        \    for fname in sorted(os.listdir(src_dir)):\n        if not fname.endswith('.dat'):\n\
+        \            continue\n        with open(os.path.join(src_dir, fname), 'rb')\
+        \ as f:\n            data = f.read()\n        if len(data) < 24:\n       \
+        \     continue\n        iw, ih, ox, oy, cwn, chn = struct.unpack_from('<IIIIII',\
+        \ data, 0)\n        px = data[24:]\n        if len(px) < iw * ih * 4:\n  \
+        \          continue\n        if canvas is None:\n            cw, ch = cwn,\
+        \ chn\n            canvas = bytearray(cw * ch * 4)\n        for y in range(ih):\n\
+        \            for x in range(iw):\n                si = (y * iw + x) * 4\n\
+        \                dx = ox + x; dy = oy + y\n                if dx < cw and\
+        \ dy < ch:\n                    di = (dy * cw + dx) * 4\n                \
+        \    canvas[di:di+4] = px[si:si+4]\n    if canvas is None:\n        print(\"\
+        WARN: \" + icon_set + \": no icons generated\")\n        continue\n    # Write\
+        \ PNG\n    def png_chunk(ctype, cdata):\n        c = ctype + cdata\n     \
+        \   return struct.pack('>I', len(cdata)) + c + struct.pack('>I', zlib.crc32(c)\
+        \ & 0xffffffff)\n    with open(dst_png, 'wb') as f:\n        f.write(b'\\\
+        x89PNG\\r\\n\\x1a\\n')\n        f.write(png_chunk(b'IHDR', struct.pack('>IIBBBBB',\
+        \ cw, ch, 8, 6, 0, 0, 0)))\n        raw = b''\n        for y in range(ch):\n\
+        \            raw += b'\\x00' + bytes(canvas[y*cw*4:(y+1)*cw*4])\n        f.write(png_chunk(b'IDAT',\
+        \ zlib.compress(raw)))\n        f.write(png_chunk(b'IEND', b''))\n    # Generate\
+        \ .c from PNG using the native datatoc\n    import subprocess\n    subprocess.run(['/tmp/host_tools/datatoc',\
+        \ dst_png, dst_c], check=True)\n    print(icon_set + \": \" + str(cw) + \"\
+        x\" + str(ch) + \" -> icons pre-generated\")\n\n# Patch icon sprite build\
+        \ rules in build.ninja to no-op (already pre-generated).\n# IMPORTANT: do\
+        \ NOT use re.DOTALL here — it causes .* to match across\n# build rule boundaries,\
+        \ silently deleting hundreds of build rules.\nfor icon in ('blender_icons16',\
+        \ 'blender_icons32'):\n    pat = (r'^build\\s+.*release/datafiles/' +\n  \
+        \         re.escape(icon) +\n           r'\\.png.*release/datafiles/' +\n\
+        \           re.escape(icon) +\n           r'\\.png\\.c:.*(\\n\\s+[^\\n]*)*')\n\
+        \    m = re.search(pat, t, re.MULTILINE)\n    if m:\n        print(\"Patched\
+        \ icon rule for \" + icon)\n        rep = ('build release/datafiles/' + icon\
+        \ +\n               '.png release/datafiles/' + icon +\n               '.png.c:\
+        \ CUSTOM_COMMAND\\n'\n               '  COMMAND = :\\n'\n               '\
+        \  RESTAT = 1\\n')\n        t = re.sub(pat, rep, t, count=1, flags=re.MULTILINE)\n\
+        \    else:\n         print(\"NO MATCH for icon rule: \" + icon)\n\n# Skip\
+        \ msgfmt link (prebuilt TBB/GMP .so reference glibc symbols not\n# in Android\
+        \ Bionic: fgets_unlocked@LIBC_P, nl_langinfo@LIBC_O).\n# msgfmt is only needed\
+        \ for .mo translation files (not built for\n# Android), so a no-op rule is\
+        \ safe.\npat = r'^build bin/msgfmt: CXX_EXECUTABLE_LINKER__msgfmt_Release\
+        \ [^\\n]*(\\n\\s+[^\\n]*)*'\nrep = 'build bin/msgfmt: CUSTOM_COMMAND\\n  COMMAND\
+        \ = :\\n  RESTAT = 1\\n'\nm = re.search(pat, t, re.MULTILINE)\nif m:\n   \
+        \ print(\"Replaced build rule for bin/msgfmt (no-op to skip glibc symbols)\"\
+        )\n    t = re.sub(pat, rep, t, count=1, flags=re.MULTILINE)\nelse:\n    print(\"\
+        WARNING: no build rule found for bin/msgfmt\")\n\nwith open('build.ninja',\
+        \ 'w') as f:\n    f.write(t)\nprint('build.ninja patched OK')\nPYEOF\n"
+    - name: Build Blender
+      if: steps.configure.outcome == 'success'
+      run: "set -x\ncd blender36/build\n{\n  echo \"=== NINJA DRY RUN ===\"\n  ninja\
+        \ -n 2>&1 | head -50 || echo \"[ninja dry-run failed]\"\n  echo \"=== TARGETS\
+        \ ===\"\n  ninja -t targets all 2>&1 | head -50 || echo \"[ninja targets failed]\"\
+        \n  echo \"=== EDGE COUNT ===\"\n  grep -cP '^build ' build.ninja || echo\
+        \ \"0\"\n  grep -P '^include ' build.ninja 2>/dev/null || echo \"(no includes)\"\
+        \n  echo \"=== .a BUILD RULES ===\"\n  grep -P '^build\\s+\\S*\\.a:' build.ninja\
+        \ 2>/dev/null || echo \"(no .a rules in main file)\"\n  echo \"=== FULL BUILD\
+        \ ===\"\n  ninja -j$(nproc) 2>&1; echo \"==NINJA_EXIT=$?==\"\n  echo \"===\
+        \ FAILURES ===\"\n} 2>&1 | tee build.log\nrc=\"$(grep '==NINJA_EXIT=' build.log\
+        \ | tail -1 | sed 's/.*==NINJA_EXIT=//;s/==.*//' || echo '1')\"\necho \"Ninja\
+        \ exit code: $rc\"\nif [ \"${rc:-1}\" -ne 0 ]; then\n  echo \"BUILD FAILED\
+        \ - ninja exit code $rc\"\n  exit 1\nfi\necho \"BUILD COMPLETED SUCCESSFULLY\"\
+        \n"
+    - name: Collect outputs
+      if: always()
+      run: 'set -x
 
-      - name: Configure Blender 3.6 for Android
-        id: configure
-        run: |
-          mkdir -p blender36/build && cd blender36/build
+        mkdir -p ${{ github.workspace }}/output
 
-          # Host tools (datatoc, makesdna, makesrna) are linked statically,
-          # so QEMU user-mode (via binfmt_misc) can run them without the
-          # Android system linker (/system/bin/linker64).
-          cmake -G Ninja .. \
-            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
-            -DANDROID_ABI=arm64-v8a \
-            -DANDROID_PLATFORM=${{ env.ANDROID_API }} \
-            -DWITH_BLENDER=ON \
-            -DWITH_PLAYER=OFF \
-            -DWITH_GAMEENGINE=OFF \
-            -DWITH_CYCLES=ON \
-            -DWITH_COMPOSITOR=ON \
-            -DWITH_FREESTYLE=ON \
-            -DWITH_OPENCOLORIO=ON \
-            -DWITH_OPENVDB=ON \
-            -DWITH_AUDASPACE=ON \
-            -DWITH_CODEC_FFMPEG=ON \
-            -DWITH_OPENAL=ON \
-            -DWITH_SDL=ON \
-            -DWITH_PYTHON=ON \
-            -DWITH_OPENIMAGEIO=ON \
-            -DWITH_BOOST=ON \
-            -DWITH_LIBMV=ON \
-            -DWITH_INTERNATIONAL=OFF \
-            -DWITH_INSTALL_PORTABLE=ON \
-            -DWITH_HEADLESS=OFF \
-            -DWITH_OPENMP=ON \
-            -DWITH_GHOST_WAYLAND=OFF \
-            -DWITH_IMAGE_TIFF=ON \
-            -DWITH_IMAGE_OPENEXR=ON \
-            -DWITH_ALEMBIC=ON \
-            -DWITH_USD=ON \
-            -DWITH_GHOST_X11=OFF \
-            -DWITH_INPUT_NDOF=OFF \
-            -DWITH_MEM_JEMALLOC=OFF \
-            -DWITH_TBB=ON \
-            -DWITH_GMP=ON \
-            -DWITH_OPENSUBDIV=ON \
-            -DWITH_OPENCOLLADA=OFF \
-            -DWITH_FFTW3=ON \
-            -DWITH_OPENIMAGEDENOISE=ON \
-            -DWITH_COMPOSITOR_CPU=OFF \
-            -DWITH_CODEC_FFMPEG=OFF \
-            -DWITH_XR_OPENXR=OFF \
-            -DWITH_CPU_SSE=OFF \
-            -DWITH_CPU_AVX=OFF \
-            -DWITH_CPU_AVX2=OFF \
-            -DLIB_DIR="${{ github.workspace }}/lib-android_arm64" \
-            -DDATATOC_EXECUTABLE="/tmp/host_tools/datatoc" \
-            -DDATATOC_ICON_EXECUTABLE="/tmp/host_tools/datatoc_icon" \
-            -DCMAKE_C_FLAGS="-fPIC -Os -DANDROID" \
-            -DCMAKE_CXX_FLAGS="-fPIC -Os -DANDROID -D_LIBCPP_ENABLE_CXX17_REMOVED_FEATURES -Wno-enum-constexpr-conversion -Wno-error=enum-constexpr-conversion" \
-            -DCMAKE_EXE_LINKER_FLAGS="-static-libgcc -static-libstdc++ -Wl,-z,max-page-size=4096 -Wl,--allow-shlib-undefined" \
-            -DCMAKE_SHARED_LINKER_FLAGS="-static-libgcc -static-libstdc++ -Wl,-z,max-page-size=4096 -Wl,--allow-shlib-undefined" \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_FIND_ROOT_PATH="${{ github.workspace }}/lib-android_arm64" \
-            -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=BOTH \
-            -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=BOTH \
-            -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER \
-            -DCMAKE_SKIP_RPATH=ON \
-            -DCMAKE_SKIP_INSTALL_RPATH=ON 2>&1 | tee cmake_config.log
+        echo "=== Searching for built files ==="
 
-      - name: Show CMake error on failure
-        if: steps.configure.outcome == 'failure'
-        run: |
-          echo "=== CMake Configuration Failed ==="
-          cat blender36/build/cmake_config.log
-          echo "=== CMakeError.log ==="
-          cat blender36/build/CMakeFiles/CMakeError.log 2>/dev/null || true
+        find ${{ github.workspace }}/blender36/build -name "*.so" -o -name "*.a" 2>/dev/null
+        | head -50 || echo "(no .so/.a found)"
 
-      - name: Pre-place native host tools and patch build rules
-        if: steps.configure.outcome == 'success'
-        run: |
-          set -ex
-          ls -la /tmp/host_tools/
+        find ${{ github.workspace }}/blender36/build -name "libblender*" 2>/dev/null
+        | head -10 || echo "(no libblender* found)"
 
-          cd blender36/build
+        find ${{ github.workspace }}/blender36/build -name "*.o" 2>/dev/null | head
+        -10 || echo "(no .o found)"
 
-          # Run Python patching script for RNA source files (avoids complex sed escaping in YAML)
-          python3 /home/runner/work/Blender3.6_arm64/Blender3.6_arm64/patch_rna.py
+        # Copy all .a files (Blender modules) for APK linking
 
-          # Build makesdna natively (x86_64) and generate dna.c / dna_type_offsets.h
-          # The android fork comments out the makesdna executable and custom_command
-          # in CMakeLists.txt, so these files are never produced during cmake.
-          # Without them, compilation of dna.c.o fails at step ~3085.
-          mkdir -p /tmp/host_tools
-          DNA_GEN_DIR="source/blender/makesdna/intern"
-          if [ -f "${DNA_GEN_DIR}/dna_includes_as_strings.h" ]; then
-            echo "=== Compiling makesdna natively (C with gcc, C++ with g++) ==="
-            INC_FLAGS="-DNDEBUG -DWITH_DNA_GHASH"
-            INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/makesdna"
-          INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/makesdna/intern"
-          INC_FLAGS="$INC_FLAGS -I $PWD/source/blender/makesdna/intern"
-            INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/blenlib"
-            INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/imbuf"
-            INC_FLAGS="$INC_FLAGS -I $PWD/../intern/atomic"
-            INC_FLAGS="$INC_FLAGS -I $PWD/../intern/guardedalloc"
-            INC_FLAGS="$INC_FLAGS -I $PWD/../intern/guardedalloc/intern"
-            INC_FLAGS="$INC_FLAGS -I $PWD/${DNA_GEN_DIR}"
-            OBJDIR=$(mktemp -d)
-            # C sources (gcc) - makesdna executable does NOT need dna_genfile.c
-            for src in \
-              "$PWD/../source/blender/makesdna/intern/makesdna.c" \
-              "$PWD/../source/blender/makesdna/intern/dna_utils.c" \
-              "$PWD/../source/blender/blenlib/intern/BLI_assert.c" \
-              "$PWD/../source/blender/blenlib/intern/BLI_ghash.c" \
-              "$PWD/../source/blender/blenlib/intern/BLI_ghash_utils.c" \
-              "$PWD/../source/blender/blenlib/intern/BLI_memarena.c" \
-              "$PWD/../source/blender/blenlib/intern/BLI_mempool.c" \
-              "$PWD/../source/blender/blenlib/intern/hash_mm2a.c" \
-              "$PWD/../source/blender/blenlib/intern/endian_switch.c" \
-              "$PWD/../intern/guardedalloc/intern/mallocn.c" \
-              "$PWD/../intern/guardedalloc/intern/mallocn_guarded_impl.c" \
-              "$PWD/../intern/guardedalloc/intern/mallocn_lockfree_impl.c"; do
-              bn=$(basename "$src" .c)
-              gcc -c $INC_FLAGS -o "$OBJDIR/${bn}.o" "$src" 2>&1
-            done
-            # C++ sources (g++ - DNA C++ headers are skipped when __cplusplus not
-            # defined, but guardedalloc .cc files need C++ stdlib)
-            for src in \
-              "$PWD/../intern/guardedalloc/intern/memory_usage.cc" \
-              "$PWD/../intern/guardedalloc/intern/leak_detector.cc"; do
-              bn=$(basename "$src" .cc)
-              g++ -c $INC_FLAGS -o "$OBJDIR/${bn}.o" "$src" 2>&1
-            done
-            # Link with g++
-            g++ -o /tmp/host_tools/makesdna "$OBJDIR"/*.o -lm -lpthread 2>&1
-            rm -rf "$OBJDIR"
-            echo "=== Running makesdna to generate dna.c ==="
-            /tmp/host_tools/makesdna \
-              "${DNA_GEN_DIR}/dna.c" \
-              "${DNA_GEN_DIR}/dna_type_offsets.h" \
-              "${DNA_GEN_DIR}/dna_verify.c" \
-              "$PWD/../source/blender/makesdna/" 2>&1
-            # Verify files were actually created
-            ls -la "${DNA_GEN_DIR}/dna.c" "${DNA_GEN_DIR}/dna_type_offsets.h" "${DNA_GEN_DIR}/dna_verify.c"
-            # Compile native libbf_dna.a from generated files (needed by makesrna)
-            echo "=== Compiling native libbf_dna.a from generated files ==="
-            DNA_OBJDIR=$(mktemp -d)
-            for src in \
-              "${DNA_GEN_DIR}/dna.c" \
-              "${DNA_GEN_DIR}/dna_verify.c" \
-              "$PWD/../source/blender/makesdna/intern/dna_genfile.c" \
-              "$PWD/../source/blender/makesdna/intern/dna_utils.c" \
-              "$PWD/../source/blender/makesdna/intern/dna_defaults.c" \
-              "$PWD/../source/blender/blenlib/intern/BLI_assert.c" \
-              "$PWD/../source/blender/blenlib/intern/BLI_ghash.c" \
-              "$PWD/../source/blender/blenlib/intern/BLI_ghash_utils.c" \
-              "$PWD/../source/blender/blenlib/intern/BLI_memarena.c" \
-              "$PWD/../source/blender/blenlib/intern/BLI_mempool.c" \
-              "$PWD/../source/blender/blenlib/intern/hash_mm2a.c" \
-              "$PWD/../source/blender/blenlib/intern/endian_switch.c" \
-              "$PWD/../intern/guardedalloc/intern/mallocn.c" \
-              "$PWD/../intern/guardedalloc/intern/mallocn_guarded_impl.c" \
-              "$PWD/../intern/guardedalloc/intern/mallocn_lockfree_impl.c"; do
-              bn=$(basename "$src" .c)
-              gcc -c $INC_FLAGS -o "$DNA_OBJDIR/${bn}.o" "$src" 2>&1
-            done
-            for src in \
-              "$PWD/../intern/guardedalloc/intern/memory_usage.cc" \
-              "$PWD/../intern/guardedalloc/intern/leak_detector.cc"; do
-              bn=$(basename "$src" .cc)
-              g++ -c $INC_FLAGS -o "$DNA_OBJDIR/${bn}.o" "$src" 2>&1
-            done
-            ar rcs /tmp/host_tools/libbf_dna_native.a "$DNA_OBJDIR"/*.o
-            rm -rf "$DNA_OBJDIR"
-          else
-            echo "WARNING: generated header dna_includes_as_strings.h not found, cannot build makesdna"
-          fi
+        echo "=== Copying .a files ==="
 
-          # Build makesrna natively and run it to generate rna_*_gen.c, 
-          # RNA_blender.h, RNA_blender_cpp.h, RNA_prototypes.h, etc.
-          echo "=== Compiling makesrna natively (gcc) ==="
-          RNA_INTERN="$PWD/../source/blender/makesrna/intern"
-          INC_FLAGS="-DNDEBUG -D_LIBCPP_ENABLE_CXX17_REMOVED_FEATURES -DWITH_FLUID"
-          INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/makesrna"
-          INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/makesdna"
-          INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/makesdna/intern"
-          INC_FLAGS="$INC_FLAGS -I $PWD/source/blender/makesdna/intern"
-          INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/blenlib"
-          INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/blenlib/intern"
-          INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/blenkernel"
-          INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/imbuf"
-          INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/gpu"
-          INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/windowmanager"
-          INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/blenloader"
-          INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/editors/include"
-          INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/blentranslation"
-          INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/modifiers"
-          INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/depsgraph"
-          INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/render"
-          INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/simulation"
-          INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/bmesh"
-          INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/sequencer"
-          INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/blenfont"
-          INC_FLAGS="$INC_FLAGS -I $PWD/../source/blender/nodes"
-          INC_FLAGS="$INC_FLAGS -I $PWD/../intern/atomic"
-          INC_FLAGS="$INC_FLAGS -I $PWD/../intern/guardedalloc"
-          INC_FLAGS="$INC_FLAGS -I $PWD/../intern/guardedalloc/intern"
-          INC_FLAGS="$INC_FLAGS -I $PWD/../intern/clog"
-          INC_FLAGS="$INC_FLAGS -I $PWD/../release/datafiles/userdef"
-          RNA_OBJDIR=$(mktemp -d)
-          # Compile support libraries (gcc)
-          SUPPORT_SRCS=(
-            "$PWD/../source/blender/blenlib/intern/BLI_assert.c"
-            "$PWD/../source/blender/blenlib/intern/BLI_ghash.c"
-            "$PWD/../source/blender/blenlib/intern/BLI_ghash_utils.c"
-            "$PWD/../source/blender/blenlib/intern/BLI_memarena.c"
-            "$PWD/../source/blender/blenlib/intern/BLI_mempool.c"
-            "$PWD/../source/blender/blenlib/intern/hash_mm2a.c" \
-            "$PWD/../source/blender/blenlib/intern/endian_switch.c" \
-            "$PWD/../source/blender/blenlib/intern/listbase.cc" \
-            "$PWD/../intern/guardedalloc/intern/mallocn.c"
-            "$PWD/../intern/guardedalloc/intern/mallocn_guarded_impl.c"
-            "$PWD/../intern/guardedalloc/intern/mallocn_lockfree_impl.c"
-            "$PWD/../intern/clog/clog.c"
-            "$PWD/../release/datafiles/userdef/userdef_default.c"
-            "$PWD/../release/datafiles/userdef/userdef_default_theme.c"
-          )
-          for src in "${SUPPORT_SRCS[@]}"; do
-            bn=$(basename "$src" .c)
-            echo "  gcc ${bn}.c"
-            gcc -w -c $INC_FLAGS -o "$RNA_OBJDIR/${bn}.o" "$src" 2>&1
-          done
-          # Compile support C++ (g++)
-          for src in \
-            "$PWD/../intern/guardedalloc/intern/memory_usage.cc" \
-            "$PWD/../intern/guardedalloc/intern/leak_detector.cc"; do
-            bn=$(basename "$src" .cc)
-            echo "  g++ ${bn}.cc"
-            g++ -w -c $INC_FLAGS -o "$RNA_OBJDIR/${bn}.o" "$src" 2>&1
-          done
-          # Compile makesrna main + rna_define.c
-          echo "  gcc makesrna.c"
-          gcc -w -c $INC_FLAGS -o "$RNA_OBJDIR/makesrna.o" "$RNA_INTERN/makesrna.c" 2>&1
-          echo "  gcc rna_define.c"
-          gcc -w -c $INC_FLAGS -o "$RNA_OBJDIR/rna_define.o" "$RNA_INTERN/rna_define.c" 2>&1
-          # Compile all rna_*.c definition files needed by makesrna
-          RNA_DEFS=$(find "$RNA_INTERN" -maxdepth 1 -name 'rna_*.c' ! -name 'rna_*_api.c' ! -name 'rna_define.c' ! -name 'rna_access*')
-          RNA_DEF_COUNT=0
-          for src in $RNA_DEFS; do
-            bn=$(basename "$src" .c)
-            echo "  gcc ${bn}.c"
-            gcc -w -c $INC_FLAGS -o "$RNA_OBJDIR/${bn}.o" "$src" 2>&1
-            RNA_DEF_COUNT=$((RNA_DEF_COUNT + 1))
-          done
-          echo "Compiled $RNA_DEF_COUNT RNA def files"
-          # Compile rna_*_api.c files
-          RNA_APIS=$(find "$RNA_INTERN" -maxdepth 1 -name 'rna_*_api.c')
-          for src in $RNA_APIS; do
-            bn=$(basename "$src" .c)
-            echo "  gcc ${bn}.c"
-            gcc -w -c $INC_FLAGS -o "$RNA_OBJDIR/${bn}.o" "$src" 2>&1
-          done
-          # Link with g++ (include native libbf_dna.a for DNA symbols)
-          g++ -o /tmp/host_tools/makesrna "$RNA_OBJDIR"/*.o /tmp/host_tools/libbf_dna_native.a -lm -lpthread 2>&1
-          rm -rf "$RNA_OBJDIR"
-          echo "=== Running makesrna ==="
-          mkdir -p "$PWD/source/blender/makesrna"
-          mkdir -p "$PWD/source/blender/makesrna/intern"
-          /tmp/host_tools/makesrna \
-            "$PWD/source/blender/makesrna/intern/" \
-            "$PWD/source/blender/makesrna/" 2>&1
-          echo "=== Generated files ==="
-          ls -la "$PWD/source/blender/makesrna/"RNA_*.h 2>/dev/null
-          ls "$PWD/source/blender/makesrna/intern/"*_gen.c 2>/dev/null | wc -l
+        ls ${{ github.workspace }}/blender36/build/lib/ 2>/dev/null || echo "(no lib
+        dir)"
 
-          # Scan build.ninja for diagnostics and add dummy rules for missing .a targets
-          python3 /dev/stdin << 'PYEOF'
-          import re, sys, os
+        find ${{ github.workspace }}/blender36/build -name "libbf_*.a" -exec cp {}
+        ${{ github.workspace }}/output/ \; 2>/dev/null || true
 
-          def read_file(path):
-              try:
-                  with open(path) as f:
-                      return f.read()
-              except FileNotFoundError:
-                  return None
+        find ${{ github.workspace }}/blender36/build -name "libextern_*.a" -exec cp
+        {} ${{ github.workspace }}/output/ \; 2>/dev/null || true
 
-          t = read_file('build.ninja')
-          if t is None:
-              print("FATAL: build.ninja not found in", os.getcwd())
-              sys.exit(1)
+        find ${{ github.workspace }}/blender36/build -name "libcycles_*.a" -exec cp
+        {} ${{ github.workspace }}/output/ \; 2>/dev/null || true
 
-          # Also read included ninja files (cmake >=3.30 may split rules)
-          ninja_content = t
-          for m in re.finditer(r'^include\s+(\S+)', t, re.MULTILINE):
-              inc = m.group(1)
-              inc_txt = read_file(inc)
-              if inc_txt is not None:
-                  print("Included ninja file: " + inc + " (" + str(len(inc_txt)) + " bytes)")
-                  ninja_content += '\n' + inc_txt
-              else:
-                  print("WARNING: included ninja file not found: " + inc)
+        # Copy the final .so if built
 
-          # Diagnostic: list all .a build rules
-          build_lines = [l for l in ninja_content.split('\n') if l.startswith('build ') and '.a:' in l]
-          print("=== ALL .a BUILD RULES (" + str(len(build_lines)) + ") ===")
-          for bl in build_lines:
-              print("  " + bl.strip())
+        cp ${{ github.workspace }}/blender36/build/lib/libblender.so ${{ github.workspace
+        }}/output/ 2>/dev/null || echo "(no libblender.so)"
 
-          # Diagnostic: list all .o build rules
-          o_rules = [l for l in ninja_content.split('\n') if l.startswith('build ') and '.o:' in l]
-          print("=== ALL .o BUILD RULES (" + str(len(o_rules)) + ") ===")
-          for ol in o_rules[:10]:
-              print("  " + ol.strip())
-          if len(o_rules) > 10:
-              print("  ... (" + str(len(o_rules) - 10) + " more)")
+        # Copy logs and build files for diagnostics
 
-          # Diagnostic: list phony targets that depend on .a files
-          phony_a_deps = set()
-          for l in ninja_content.split('\n'):
-              l = l.strip()
-              if l.startswith('build ') and ': phony' in l:
-                  deps = l.split(':')[1].replace('phony', '').strip()
-                  for dep in deps.split():
-                      dep = dep.strip()
-                      if dep.endswith('.a') and dep not in phony_a_deps:
-                          phony_a_deps.add(dep)
-          print("=== PHONY TARGETS DEPENDING ON .a FILES (" + str(len(phony_a_deps)) + ") ===")
-          for d in sorted(phony_a_deps):
-              print("  " + d)
+        cp ${{ github.workspace }}/blender36/build/cmake_config.log ${{ github.workspace
+        }}/output/ 2>/dev/null || echo "(no cmake_config.log)"
 
-          # Check which .a deps are missing build rules
-          existing_a_rules = set()
-          for bl in build_lines:
-              parts = bl.split(':')
-              outputs = parts[0].replace('build ', '').strip().split()
-              for out in outputs:
-                  if out.endswith('.a'):
-                      existing_a_rules.add(out)
+        cp ${{ github.workspace }}/blender36/build/build.log ${{ github.workspace
+        }}/output/ 2>/dev/null || echo "(no build.log)"
 
-          # Find all .a deps from ALL build rules, not just phony targets
-          all_a_deps = set()
-          for l in ninja_content.split('\n'):
-              l = l.strip()
-              if l.startswith('build ') and '.a' in l:
-                  # Extract inputs/deps after the first colon
-                  colon_pos = l.find(':')
-                  if colon_pos > 0:
-                      after_colon = l[colon_pos+1:]
-                      parts = after_colon.split('|')
-                      for part in parts:
-                          deps = part.strip().split()
-                          for dep in deps:
-                              dep = dep.strip()
-                              if dep.endswith('.a'):
-                                  all_a_deps.add(dep)
+        cp ${{ github.workspace }}/blender36/build/build.ninja ${{ github.workspace
+        }}/output/build.ninja 2>/dev/null || echo "(no build.ninja)"
 
-          missing_a = sorted(all_a_deps - existing_a_rules)
+        cp ${{ github.workspace }}/blender36/build/CMakeFiles/rules.ninja ${{ github.workspace
+        }}/output/rules.ninja 2>/dev/null || echo "(no rules.ninja)"
 
-          # Also detect self-referencing phony .a targets (cmake generates these
-          # for libraries with no source files, e.g. bf_intern_clog on Android).
-          for bl in build_lines:
-              l = bl.strip()
-              if ': phony' in l:
-                  parts = l.split(':')
-                  out = parts[0].replace('build ', '').strip()
-                  if out.endswith('.a'):
-                      raw_deps = parts[1].replace('phony', '').strip()
-                      dep_list = raw_deps.split()
-                      for dep in dep_list:
-                          # If a phony target's dep has the right basename but wrong prefix,
-                          # it's likely a self-ref that needs a dummy rule.
-                          dep_plain = dep.split('/')[-1]
-                          out_plain = out.split('/')[-1]
-                          if dep_plain == out_plain and dep not in existing_a_rules and dep not in missing_a:
-                              missing_a.append(dep)
-                              print("  SELF-REF phony .a: " + out + " -> " + dep)
-          missing_a = sorted(missing_a)
+        echo "=== Output files ==="
 
-          print("=== MISSING .a BUILD RULES (" + str(len(missing_a)) + ") ===")
-          for a in missing_a:
-              print("  " + a)
+        ls -la ${{ github.workspace }}/output/
 
-          # Add dummy rules for missing .a (fallback safety net, rarely triggers).
-          dummy_block = ""
-          for a in missing_a:
-              dummy_block += ('build ' + a + ': CUSTOM_COMMAND\n'
-                              '  COMMAND = ar crs ' + a + '\n'
-                              '  RESTAT = 1\n\n')
-          if dummy_block:
-              with open('build.ninja', 'a') as f:
-                  f.write('\n' + dummy_block)
-              print("Added " + str(len(missing_a)) + " dummy .a build rules")
-
-          # Replace ARM64 cross-compiled datatoc rules with CUSTOM_COMMAND
-          # that copies the native x86_64 host binary (avoids QEMU binfmt issues).
-          # No re.DOTALL — .*? with DOTALL *and* a \nbuild lookahead is safer but
-          # still risks crossing rules; use single-line matching instead.
-          for name, host_path in (('datatoc', '/tmp/host_tools/datatoc'),
-                                  ('datatoc_icon', '/tmp/host_tools/datatoc_icon')):
-              pat = (r'^build bin/' + re.escape(name) +
-                     r': C_EXECUTABLE_LINKER__' +
-                     re.escape(name) +
-                     r'_Release [^\n]*(\n\s+[^\n]*)*')
-              rep = ('build bin/' + name + ': CUSTOM_COMMAND\n'
-                     '  COMMAND = cp ' + host_path + ' bin/' + name + '\n'
-                     '  RESTAT = 1\n')
-              m = re.search(pat, t, re.MULTILINE)
-              if m:
-                  print("Replaced build rule for bin/" + name)
-                  t = re.sub(pat, rep, t, count=1, flags=re.MULTILINE)
-              else:
-                  print("WARNING: no build rule found for bin/" + name)
-
-          # Pre-generate icon PNGs using Python (datatoc_icon host binary segfaults).
-          os.makedirs('release/datafiles', exist_ok=True)
-          for icon_set in ('blender_icons16', 'blender_icons32'):
-              src_dir = "../release/datafiles/" + icon_set
-              dst_png = "release/datafiles/" + icon_set + ".png"
-              dst_c = dst_png + ".c"
-              if not os.path.isdir(src_dir):
-                  print("SKIP " + icon_set + ": no source dir " + src_dir)
-                  continue
-              # Generate the PNG from .dat files using pure Python (PIL-free).
-              import struct, zlib
-              cw = ch = 0
-              canvas = None
-              for fname in sorted(os.listdir(src_dir)):
-                  if not fname.endswith('.dat'):
-                      continue
-                  with open(os.path.join(src_dir, fname), 'rb') as f:
-                      data = f.read()
-                  if len(data) < 24:
-                      continue
-                  iw, ih, ox, oy, cwn, chn = struct.unpack_from('<IIIIII', data, 0)
-                  px = data[24:]
-                  if len(px) < iw * ih * 4:
-                      continue
-                  if canvas is None:
-                      cw, ch = cwn, chn
-                      canvas = bytearray(cw * ch * 4)
-                  for y in range(ih):
-                      for x in range(iw):
-                          si = (y * iw + x) * 4
-                          dx = ox + x; dy = oy + y
-                          if dx < cw and dy < ch:
-                              di = (dy * cw + dx) * 4
-                              canvas[di:di+4] = px[si:si+4]
-              if canvas is None:
-                  print("WARN: " + icon_set + ": no icons generated")
-                  continue
-              # Write PNG
-              def png_chunk(ctype, cdata):
-                  c = ctype + cdata
-                  return struct.pack('>I', len(cdata)) + c + struct.pack('>I', zlib.crc32(c) & 0xffffffff)
-              with open(dst_png, 'wb') as f:
-                  f.write(b'\x89PNG\r\n\x1a\n')
-                  f.write(png_chunk(b'IHDR', struct.pack('>IIBBBBB', cw, ch, 8, 6, 0, 0, 0)))
-                  raw = b''
-                  for y in range(ch):
-                      raw += b'\x00' + bytes(canvas[y*cw*4:(y+1)*cw*4])
-                  f.write(png_chunk(b'IDAT', zlib.compress(raw)))
-                  f.write(png_chunk(b'IEND', b''))
-              # Generate .c from PNG using the native datatoc
-              import subprocess
-              subprocess.run(['/tmp/host_tools/datatoc', dst_png, dst_c], check=True)
-              print(icon_set + ": " + str(cw) + "x" + str(ch) + " -> icons pre-generated")
-
-          # Patch icon sprite build rules in build.ninja to no-op (already pre-generated).
-          # IMPORTANT: do NOT use re.DOTALL here — it causes .* to match across
-          # build rule boundaries, silently deleting hundreds of build rules.
-          for icon in ('blender_icons16', 'blender_icons32'):
-              pat = (r'^build\s+.*release/datafiles/' +
-                     re.escape(icon) +
-                     r'\.png.*release/datafiles/' +
-                     re.escape(icon) +
-                     r'\.png\.c:.*(\n\s+[^\n]*)*')
-              m = re.search(pat, t, re.MULTILINE)
-              if m:
-                  print("Patched icon rule for " + icon)
-                  rep = ('build release/datafiles/' + icon +
-                         '.png release/datafiles/' + icon +
-                         '.png.c: CUSTOM_COMMAND\n'
-                         '  COMMAND = :\n'
-                         '  RESTAT = 1\n')
-                  t = re.sub(pat, rep, t, count=1, flags=re.MULTILINE)
-              else:
-                   print("NO MATCH for icon rule: " + icon)
-
-          # Skip msgfmt link (prebuilt TBB/GMP .so reference glibc symbols not
-          # in Android Bionic: fgets_unlocked@LIBC_P, nl_langinfo@LIBC_O).
-          # msgfmt is only needed for .mo translation files (not built for
-          # Android), so a no-op rule is safe.
-          pat = r'^build bin/msgfmt: CXX_EXECUTABLE_LINKER__msgfmt_Release [^\n]*(\n\s+[^\n]*)*'
-          rep = 'build bin/msgfmt: CUSTOM_COMMAND\n  COMMAND = :\n  RESTAT = 1\n'
-          m = re.search(pat, t, re.MULTILINE)
-          if m:
-              print("Replaced build rule for bin/msgfmt (no-op to skip glibc symbols)")
-              t = re.sub(pat, rep, t, count=1, flags=re.MULTILINE)
-          else:
-              print("WARNING: no build rule found for bin/msgfmt")
-
-          with open('build.ninja', 'w') as f:
-              f.write(t)
-          print('build.ninja patched OK')
-          PYEOF
-
-
-
-      - name: Build Blender
-        if: steps.configure.outcome == 'success'
-        run: |
-          set -x
-          cd blender36/build
-          {
-            echo "=== NINJA DRY RUN ==="
-            ninja -n 2>&1 | head -50 || echo "[ninja dry-run failed]"
-            echo "=== TARGETS ==="
-            ninja -t targets all 2>&1 | head -50 || echo "[ninja targets failed]"
-            echo "=== EDGE COUNT ==="
-            grep -cP '^build ' build.ninja || echo "0"
-            grep -P '^include ' build.ninja 2>/dev/null || echo "(no includes)"
-            echo "=== .a BUILD RULES ==="
-            grep -P '^build\s+\S*\.a:' build.ninja 2>/dev/null || echo "(no .a rules in main file)"
-            echo "=== FULL BUILD ==="
-            ninja -j$(nproc) 2>&1; echo "==NINJA_EXIT=$?=="
-            echo "=== FAILURES ==="
-          } 2>&1 | tee build.log
-          rc="$(grep '==NINJA_EXIT=' build.log | tail -1 | sed 's/.*==NINJA_EXIT=//;s/==.*//' || echo '1')"
-          echo "Ninja exit code: $rc"
-          if [ "${rc:-1}" -ne 0 ]; then
-            echo "BUILD FAILED - ninja exit code $rc"
-            exit 1
-          fi
-          echo "BUILD COMPLETED SUCCESSFULLY"
-
-      - name: Collect outputs
-        if: always()
-        run: |
-          set -x
-          mkdir -p ${{ github.workspace }}/output
-          echo "=== Searching for built files ==="
-          find ${{ github.workspace }}/blender36/build -name "*.so" -o -name "*.a" 2>/dev/null | head -50 || echo "(no .so/.a found)"
-          find ${{ github.workspace }}/blender36/build -name "libblender*" 2>/dev/null | head -10 || echo "(no libblender* found)"
-          find ${{ github.workspace }}/blender36/build -name "*.o" 2>/dev/null | head -10 || echo "(no .o found)"
-          # Copy all .a files (Blender modules) for APK linking
-          echo "=== Copying .a files ==="
-          ls ${{ github.workspace }}/blender36/build/lib/ 2>/dev/null || echo "(no lib dir)"
-          find ${{ github.workspace }}/blender36/build -name "libbf_*.a" -exec cp {} ${{ github.workspace }}/output/ \; 2>/dev/null || true
-          find ${{ github.workspace }}/blender36/build -name "libextern_*.a" -exec cp {} ${{ github.workspace }}/output/ \; 2>/dev/null || true
-          find ${{ github.workspace }}/blender36/build -name "libcycles_*.a" -exec cp {} ${{ github.workspace }}/output/ \; 2>/dev/null || true
-          # Copy the final .so if built
-          cp ${{ github.workspace }}/blender36/build/lib/libblender.so ${{ github.workspace }}/output/ 2>/dev/null || echo "(no libblender.so)"
-          # Copy logs and build files for diagnostics
-          cp ${{ github.workspace }}/blender36/build/cmake_config.log ${{ github.workspace }}/output/ 2>/dev/null || echo "(no cmake_config.log)"
-          cp ${{ github.workspace }}/blender36/build/build.log ${{ github.workspace }}/output/ 2>/dev/null || echo "(no build.log)"
-          cp ${{ github.workspace }}/blender36/build/build.ninja ${{ github.workspace }}/output/build.ninja 2>/dev/null || echo "(no build.ninja)"
-          cp ${{ github.workspace }}/blender36/build/CMakeFiles/rules.ninja ${{ github.workspace }}/output/rules.ninja 2>/dev/null || echo "(no rules.ninja)"
-          echo "=== Output files ==="
-          ls -la ${{ github.workspace }}/output/
-
-      - name: Upload artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: blender36-build-output
-          path: ${{ github.workspace }}/output/*
+        '
+    - name: Push .a files to blender-android-3.6 repo
+      if: success()
+      env:
+        GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        TARGET_REPO: apexmiguel9-hub/blender-android-3.6
+      run: "set -ex\n# Clone the target repo\ngit clone https://${GH_TOKEN}@github.com/${TARGET_REPO}.git\
+        \ /tmp/blender-android-3.6\ncd /tmp/blender-android-3.6\n\n# Configure git\n\
+        git config user.name \"github-actions\"\ngit config user.email \"actions@github.com\"\
+        \n\n# Create the lib directory structure expected by CMake\nLIB_DIR=\"OBlender/app/src/main/cpp/../.cxx/cmake/release/arm64-v8a/lib\"\
+        \nmkdir -p \"$LIB_DIR\"\n\n# Copy all .a files from our build\ncp ${{ github.workspace\
+        \ }}/output/libbf_*.a \"$LIB_DIR/\" 2>/dev/null || true\ncp ${{ github.workspace\
+        \ }}/output/libextern_*.a \"$LIB_DIR/\" 2>/dev/null || true\ncp ${{ github.workspace\
+        \ }}/output/libcycles_*.a \"$LIB_DIR/\" 2>/dev/null || true\n\n# Count files\n\
+        COUNT=$(find \"$LIB_DIR\" -name \"*.a\" | wc -l)\necho \"Copied $COUNT .a\
+        \ files to $LIB_DIR\"\n\n# Commit and push\ngit add \"$LIB_DIR\"/*.a\nif git\
+        \ diff --staged --quiet; then\n  echo \"No changes to commit\"\nelse\n  git\
+        \ commit -m \"Update Blender .a libraries from build #${{ github.run_number\
+        \ }}\"\n  git push origin main\n  echo \"Pushed updated .a files to ${TARGET_REPO}\"\
+        \nfi"
+    - name: Upload artifacts
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: blender36-build-output
+        path: ${{ github.workspace }}/output/*
