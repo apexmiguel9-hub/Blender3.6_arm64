@@ -1,5 +1,5 @@
 name: Build Blender 3.6.22 for Android ARM64
-on:
+true:
   push:
     branches:
     - main
@@ -422,15 +422,26 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: blender-a-libraries
-        path: |
-          ${{ github.workspace }}/output/libbf_*.a
-          ${{ github.workspace }}/output/libextern_*.a
-          ${{ github.workspace }}/output/libcycles_*.a
-        retention-days: 7
+        path: '${{ github.workspace }}/output/libbf_*.a
 
+          ${{ github.workspace }}/output/libextern_*.a
+
+          ${{ github.workspace }}/output/libcycles_*.a
+
+          '
+        retention-days: 7
     - name: Upload artifacts
       if: always()
       uses: actions/upload-artifact@v4
       with:
         name: blender36-build-output
         path: ${{ github.workspace }}/output/*
+    - name: Trigger app build
+      if: success()
+      uses: peter-evans/repository-dispatch@v3
+      with:
+        token: ${{ secrets.GH_TOKEN }}
+        repository: apexmiguel9-hub/blender-android-3.6
+        event-type: blender-libs-updated
+        client-payload: '{"run_id": "${{ github.run_id }}", "run_number": "${{ github.run_number
+          }}", "commit_sha": "${{ github.sha }}"}'
