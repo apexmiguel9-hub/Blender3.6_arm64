@@ -135,8 +135,8 @@ jobs:
             -DDATATOC_ICON_EXECUTABLE="/tmp/host_tools/datatoc_icon" \
             -DCMAKE_C_FLAGS="-fPIC -Os -DANDROID" \
             -DCMAKE_CXX_FLAGS="-fPIC -Os -DANDROID -D_LIBCPP_ENABLE_CXX17_REMOVED_FEATURES -Wno-enum-constexpr-conversion -Wno-error=enum-constexpr-conversion" \
-            -DCMAKE_EXE_LINKER_FLAGS="-static-libgcc -static-libstdc++ -Wl,-z,max-page-size=4096" \
-            -DCMAKE_SHARED_LINKER_FLAGS="-static-libgcc -static-libstdc++ -Wl,-z,max-page-size=4096" \
+            -DCMAKE_EXE_LINKER_FLAGS="-static-libgcc -static-libstdc++ -Wl,-z,max-page-size=4096 -Wl,--allow-shlib-undefined" \
+            -DCMAKE_SHARED_LINKER_FLAGS="-static-libgcc -static-libstdc++ -Wl,-z,max-page-size=4096 -Wl,--allow-shlib-undefined" \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_FIND_ROOT_PATH="${{ github.workspace }}/lib-android_arm64" \
             -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=BOTH \
