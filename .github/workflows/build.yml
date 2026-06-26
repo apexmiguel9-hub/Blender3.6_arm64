@@ -106,7 +106,7 @@ jobs:
             -DWITH_OPENIMAGEIO=ON \
             -DWITH_BOOST=ON \
             -DWITH_LIBMV=ON \
-            -DWITH_INTERNATIONAL=ON \
+            -DWITH_INTERNATIONAL=OFF \
             -DWITH_INSTALL_PORTABLE=ON \
             -DWITH_HEADLESS=OFF \
             -DWITH_OPENMP=ON \
