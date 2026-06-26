@@ -420,9 +420,8 @@ jobs:
     - name: Push .a files to blender-android-3.6 repo
       if: success()
       env:
-        GH_TOKEN: ${{ secrets.GH_TOKEN }}
         TARGET_REPO: apexmiguel9-hub/blender-android-3.6
-      run: "set -ex\n# Clone the target repo\ngit clone https://${GH_TOKEN}@github.com/${TARGET_REPO}.git\
+      run: "set -ex\n# Clone the target repo\ngit clone https://${{ github.token }}@github.com/${TARGET_REPO}.git\
         \ /tmp/blender-android-3.6\ncd /tmp/blender-android-3.6\n\n# Configure git\n\
         git config user.name \"github-actions\"\ngit config user.email \"actions@github.com\"\
         \n\n# Create the lib directory structure expected by CMake\nLIB_DIR=\"OBlender/app/src/main/cpp/../.cxx/cmake/release/arm64-v8a/lib\"\
@@ -434,7 +433,7 @@ jobs:
         \ files to $LIB_DIR\"\n\n# Commit and push\ngit add -f \"$LIB_DIR\"/*.a\nif git\
         \ diff --staged --quiet; then\n  echo \"No changes to commit\"\nelse\n  git\
         \ commit -m \"Update Blender .a libraries from build #${{ github.run_number\
-        \ }}\"\n  git push https://${GH_TOKEN}@github.com/${TARGET_REPO}.git main\n  echo \"Pushed updated .a files to ${TARGET_REPO}\"\
+        \ }}\"\n  git push https://${{ github.token }}@github.com/${TARGET_REPO}.git main\n  echo \"Pushed updated .a files to ${TARGET_REPO}\"\
         \nfi"
     - name: Upload artifacts
       if: always()
